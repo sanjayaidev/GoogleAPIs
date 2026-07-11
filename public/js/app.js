@@ -12,11 +12,33 @@ function showMsg(el, text, type) {
   el.innerHTML = `<div class="msg ${type}">${text}</div>`;
 }
 
-function toggleGate() {
-  const reg = document.getElementById('registerForm');
-  const paste = document.getElementById('pasteForm');
-  reg.style.display = reg.style.display === 'none' ? 'block' : 'none';
-  paste.style.display = paste.style.display === 'none' ? 'block' : 'none';
+function showPanel(name) {
+  const panels = { register: 'registerForm', login: 'loginForm', paste: 'pasteForm' };
+  Object.entries(panels).forEach(([key, id]) => {
+    document.getElementById(id).style.display = key === name ? 'block' : 'none';
+  });
+}
+
+function copyKey(key, btn) {
+  navigator.clipboard.writeText(key).then(() => {
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  }).catch(() => {
+    alert('Could not copy automatically - please select and copy the key manually.');
+  });
+}
+
+function showIssuedKey(msgEl, apiKeyValue, introText) {
+  msgEl.innerHTML = `
+    <div class="msg success">${introText}</div>
+    <div class="keybox" id="issuedKeyBox">${apiKeyValue}</div>
+    <div class="msg error">Save this key now — it will not be shown again.</div>
+    <button class="btn ghost small" id="copyKeyBtn" type="button">Copy key</button>
+    <button class="btn small" id="continueBtn" type="button" style="margin-left:8px;">Continue to dashboard</button>
+  `;
+  document.getElementById('copyKeyBtn').addEventListener('click', (e) => copyKey(apiKeyValue, e.target));
+  document.getElementById('continueBtn').addEventListener('click', enterDashboard);
 }
 
 async function register() {
@@ -27,10 +49,23 @@ async function register() {
     const res = await fetch(API + '/auth/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
     const data = await res.json();
     if (!res.ok) return showMsg(msgEl, data.message || data.error, 'error');
-    msgEl.innerHTML = `<div class="msg success">Account created.</div><div class="keybox">${data.apiKey}</div><div class="msg error">Save this key now — it will not be shown again.</div>`;
     apiKey = data.apiKey;
     localStorage.setItem('sm_api_key', apiKey);
-    setTimeout(enterDashboard, 1800);
+    showIssuedKey(msgEl, apiKey, 'Account created.');
+  } catch (e) { showMsg(msgEl, 'Network error: ' + e.message, 'error'); }
+}
+
+async function login() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const msgEl = document.getElementById('gateMsg');
+  try {
+    const res = await fetch(API + '/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
+    const data = await res.json();
+    if (!res.ok) return showMsg(msgEl, data.message || data.error, 'error');
+    apiKey = data.apiKey;
+    localStorage.setItem('sm_api_key', apiKey);
+    showIssuedKey(msgEl, apiKey, 'Logged in.');
   } catch (e) { showMsg(msgEl, 'Network error: ' + e.message, 'error'); }
 }
 
@@ -325,9 +360,12 @@ async function deleteFlow(id) {
 function init() {
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('registerBtn').addEventListener('click', register);
-  document.getElementById('toggleToPasteBtn').addEventListener('click', toggleGate);
+  document.getElementById('loginBtn').addEventListener('click', login);
+  document.getElementById('toggleToPasteBtn').addEventListener('click', () => showPanel('paste'));
+  document.getElementById('toggleToLoginBtn').addEventListener('click', () => showPanel('login'));
   document.getElementById('usePastedKeyBtn').addEventListener('click', usePastedKey);
-  document.getElementById('toggleToRegisterBtn').addEventListener('click', toggleGate);
+  document.getElementById('toggleToRegisterBtn').addEventListener('click', () => showPanel('register'));
+  document.getElementById('toggleToRegisterFromLoginBtn').addEventListener('click', () => showPanel('register'));
 
   document.getElementById('actionModule').addEventListener('change', renderActionForm);
   document.getElementById('actionName').addEventListener('change', renderActionForm);

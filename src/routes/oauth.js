@@ -74,9 +74,16 @@ router.get('/google/callback', async (req, res) => {
     // Set credentials on the OAuth2 client so it can make authenticated requests
     client.setCredentials(tokens);
     
+    // Verify the access token is present before making the request
+    const creds = client.credentials;
+    if (!creds.access_token) {
+      logger.error('[oauth] No access token available after setting credentials');
+      return res.status(500).send('OAuth token exchange failed - no access token.');
+    }
+    
     // Use the OAuth2 client to make an authenticated request directly
     // This is more reliable than using google.oauth2() wrapper
-    const userinfoRes = await client.request({
+    const userinfoRes = await client.requestAsync({
       url: 'https://www.googleapis.com/oauth2/v2/userinfo',
     });
     const profile = userinfoRes.data;

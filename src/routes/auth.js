@@ -47,10 +47,10 @@ router.post('/register', express.json(), async (req, res, next) => {
 });
 
 // POST /auth/login { email, password }
-// Verifies credentials. Does NOT return the API key (it's not stored in
-// recoverable form) - only confirms identity, useful for a future
-// session-based admin UI. For now the dashboard itself keeps using the
-// API key directly, entered once and stored in the browser.
+// Verifies credentials, then issues a brand new API key (raw keys can't be
+// recovered once shown - only their hash is stored - so "logging in" means
+// getting a fresh key, not retrieving the old one). Existing keys for this
+// user are untouched and keep working.
 router.post('/login', express.json(), async (req, res, next) => {
   try {
     const { email, password } = req.body || {};
@@ -65,7 +65,18 @@ router.post('/login', express.json(), async (req, res, next) => {
       return res.status(401).json({ error: 'invalid_credentials' });
     }
 
-    res.json({ user: { id: user.id, email: user.email } });
+    const { raw, hash } = generateApiKey();
+    const { error: keyError } = await supabase
+      .from(TABLES.API_KEYS)
+      .insert({ user_id: user.id, key_hash: hash, label: 'login' });
+
+    if (keyError) throw keyError;
+
+    res.json({
+      user: { id: user.id, email: user.email },
+      apiKey: raw,
+      message: 'New API key issued - save it now, it will not be shown again.',
+    });
   } catch (err) {
     logger.error({ err }, '[auth] login failed');
     next(err);

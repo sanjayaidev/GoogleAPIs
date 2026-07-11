@@ -101,7 +101,7 @@
   <div class="brand"><span class="dot" id="brandDot"></span>sm-server <small>&nbsp;module gateway</small></div>
   <div class="keypill" id="keyPill" style="display:none;">
     <span id="keyPreview"></span>
-    <button onclick="logout()">disconnect</button>
+    <button id="logoutBtn">disconnect</button>
   </div>
 </div>
 
@@ -114,14 +114,14 @@
     <div id="registerForm">
       <div class="field"><label>Email</label><input id="regEmail" type="email" placeholder="you@example.com" /></div>
       <div class="field"><label>Password</label><input id="regPassword" type="password" placeholder="8+ characters" /></div>
-      <button class="btn" onclick="register()">Create account</button>
-      <div><button class="toggle-link" onclick="toggleGate()">I already have an API key</button></div>
+      <button class="btn" id="registerBtn">Create account</button>
+      <div><button class="toggle-link" id="toggleToPasteBtn">I already have an API key</button></div>
     </div>
 
     <div id="pasteForm" style="display:none;">
       <div class="field"><label>API Key</label><input id="pasteKey" type="text" placeholder="sm_live_..." /></div>
-      <button class="btn" onclick="usePastedKey()">Use this key</button>
-      <div><button class="toggle-link" onclick="toggleGate()">Register a new account instead</button></div>
+      <button class="btn" id="usePastedKeyBtn">Use this key</button>
+      <div><button class="toggle-link" id="toggleToRegisterBtn">Register a new account instead</button></div>
     </div>
   </div>
 
@@ -137,11 +137,11 @@
 
         <div class="panel">
           <h2>Run an action</h2>
-          <select id="actionModule" onchange="renderActionForm()"></select>
+          <select id="actionModule"></select>
           <select id="actionConnection"></select>
-          <select id="actionName" onchange="renderActionForm()"></select>
+          <select id="actionName"></select>
           <div id="actionFormFields" class="form-panel"></div>
-          <button class="btn" style="margin-top:10px;" onclick="runAction()">Run</button>
+          <button class="btn" style="margin-top:10px;" id="runActionBtn">Run</button>
           <div id="actionOutput"></div>
         </div>
       </div>
@@ -152,8 +152,8 @@
           <p style="color:var(--text-dim); font-size:13px; margin-top:-8px;">A saved sequence of the actions above, run top to bottom. No branching engine — each step just runs, in order.</p>
           <div class="field"><label>Flow name</label><input id="flowName" placeholder="e.g. New lead follow-up" /></div>
           <div id="stepBuilder"></div>
-          <button class="btn ghost small" onclick="addStep()">+ Add step</button>
-          <div style="margin-top:12px;"><button class="btn" onclick="saveFlow()">Save flow</button></div>
+          <button class="btn ghost small" id="addStepBtn">+ Add step</button>
+          <div style="margin-top:12px;"><button class="btn" id="saveFlowBtn">Save flow</button></div>
         </div>
 
         <div class="panel">
@@ -165,286 +165,6 @@
   </div>
 </div>
 
-<script>
-const API = ''; // same origin
-let apiKey = localStorage.getItem('sm_api_key') || null;
-let modulesCache = [];
-let connectionsCache = [];
-let stepDrafts = [];
-
-function headers() {
-  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
-}
-
-function showMsg(el, text, type) {
-  el.innerHTML = `<div class="msg ${type}">${text}</div>`;
-}
-
-function toggleGate() {
-  const reg = document.getElementById('registerForm');
-  const paste = document.getElementById('pasteForm');
-  reg.style.display = reg.style.display === 'none' ? 'block' : 'none';
-  paste.style.display = paste.style.display === 'none' ? 'block' : 'none';
-}
-
-async function register() {
-  const email = document.getElementById('regEmail').value.trim();
-  const password = document.getElementById('regPassword').value;
-  const msgEl = document.getElementById('gateMsg');
-  try {
-    const res = await fetch(API + '/auth/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
-    const data = await res.json();
-    if (!res.ok) return showMsg(msgEl, data.message || data.error, 'error');
-    msgEl.innerHTML = `<div class="msg success">Account created.</div><div class="keybox">${data.apiKey}</div><div class="msg error">Save this key now — it will not be shown again.</div>`;
-    apiKey = data.apiKey;
-    localStorage.setItem('sm_api_key', apiKey);
-    setTimeout(enterDashboard, 1800);
-  } catch (e) { showMsg(msgEl, 'Network error: ' + e.message, 'error'); }
-}
-
-function usePastedKey() {
-  const key = document.getElementById('pasteKey').value.trim();
-  if (!key) return;
-  apiKey = key;
-  localStorage.setItem('sm_api_key', apiKey);
-  enterDashboard();
-}
-
-function logout() {
-  localStorage.removeItem('sm_api_key');
-  apiKey = null;
-  location.href = '/';
-}
-
-async function enterDashboard() {
-  document.getElementById('gate').style.display = 'none';
-  document.getElementById('dashboard').style.display = 'block';
-  document.getElementById('keyPill').style.display = 'flex';
-  document.getElementById('keyPreview').textContent = apiKey.slice(0, 14) + '...';
-
-  await loadModules();
-  await loadConnections();
-  renderModuleList();
-  renderActionSelectors();
-  await loadFlows();
-  if (stepDrafts.length === 0) addStep();
-
-  const params = new URLSearchParams(location.search);
-  if (params.get('provider')) {
-    document.getElementById('banner').innerHTML =
-      `<div class="msg success">Connected ${params.get('provider')} account: ${params.get('email') || ''}</div>`;
-    history.replaceState({}, '', '/');
-    await loadConnections();
-    renderModuleList();
-    renderActionSelectors();
-  }
-}
-
-async function loadModules() {
-  const res = await fetch(API + '/api', { headers: headers() });
-  const data = await res.json();
-  modulesCache = data.modules || [];
-}
-
-async function loadConnections() {
-  const res = await fetch(API + '/connections', { headers: headers() });
-  if (!res.ok) return;
-  const data = await res.json();
-  connectionsCache = data.connections || [];
-}
-
-function renderModuleList() {
-  const el = document.getElementById('moduleList');
-  el.innerHTML = modulesCache.map(m => {
-    const conns = connectionsCache.filter(c => c.provider === m.provider && c.status === 'active');
-    const connected = conns.length > 0;
-    return `
-      <div class="module-row">
-        <div class="module-name">
-          <span class="socket ${connected ? 'on' : ''}"></span>
-          <div>
-            <div>${m.name}</div>
-            <div class="conn-label">${connected ? conns.map(c => c.account_label).join(', ') : 'not connected'}</div>
-          </div>
-        </div>
-        <button class="btn small ${connected ? 'ghost' : ''}" onclick="connectModule('${m.name}')">${connected ? '+ add another' : 'connect'}</button>
-      </div>`;
-  }).join('') || '<div class="empty">No modules registered on the server.</div>';
-}
-
-async function connectModule(moduleName) {
-  const res = await fetch(`${API}/oauth/google/start?module=${moduleName}`, { headers: headers() });
-  const data = await res.json();
-  if (data.authUrl) location.href = data.authUrl;
-  else alert(data.message || 'Could not start connection');
-}
-
-function renderActionSelectors() {
-  const modSel = document.getElementById('actionModule');
-  modSel.innerHTML = modulesCache.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
-  updateActionNameOptions();
-  updateConnectionOptions();
-}
-
-function updateActionNameOptions() {
-  const modName = document.getElementById('actionModule').value;
-  const mod = modulesCache.find(m => m.name === modName);
-  const actSel = document.getElementById('actionName');
-  actSel.innerHTML = (mod ? mod.actions : []).map(a => `<option value="${a}">${a}</option>`).join('');
-}
-
-function updateConnectionOptions() {
-  const modName = document.getElementById('actionModule').value;
-  const mod = modulesCache.find(m => m.name === modName);
-  const connSel = document.getElementById('actionConnection');
-  const relevant = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
-  connSel.innerHTML = relevant.length
-    ? relevant.map(c => `<option value="${c.id}">${c.account_label}</option>`).join('')
-    : '<option value="">no connection - connect above first</option>';
-}
-
-// Known input fields per action (mirrors each module's inputSchema).
-// Hardcoded here for the UI since schemas live server-side as zod objects.
-const ACTION_FIELDS = {
-  loadMails: [{name:'query', label:'Search query', placeholder:'is:unread'}, {name:'maxResults', label:'Max results', placeholder:'10', type:'number'}],
-  sendMail: [{name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
-  createDraft: [{name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
-  reply: [{name:'threadId', label:'Thread ID'}, {name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
-  markAsRead: [{name:'messageId', label:'Message ID'}],
-  addLabel: [{name:'messageId', label:'Message ID'}, {name:'labelId', label:'Label ID'}],
-};
-
-function fieldsHtml(fields, prefix) {
-  return fields.map(f => `
-    <div class="field">
-      <label>${f.label}</label>
-      ${f.textarea
-        ? `<textarea id="${prefix}_${f.name}" rows="3" style="width:100%; background:var(--panel); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; font-family:var(--sans);" placeholder="${f.placeholder||''}"></textarea>`
-        : `<input id="${prefix}_${f.name}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" />`}
-    </div>`).join('');
-}
-
-function renderActionForm() {
-  updateActionNameOptions();
-  updateConnectionOptions();
-  const actionName = document.getElementById('actionName').value;
-  const fields = ACTION_FIELDS[actionName] || [];
-  document.getElementById('actionFormFields').innerHTML =
-    `<h3>${actionName} inputs</h3>` + (fields.length ? fieldsHtml(fields, 'act') : '<div class="empty">No inputs required.</div>');
-}
-
-async function runAction() {
-  const moduleName = document.getElementById('actionModule').value;
-  const actionName = document.getElementById('actionName').value;
-  const connectionId = document.getElementById('actionConnection').value;
-  const fields = ACTION_FIELDS[actionName] || [];
-  const input = {};
-  fields.forEach(f => {
-    const el = document.getElementById('act_' + f.name);
-    if (!el || el.value === '') return;
-    input[f.name] = f.type === 'number' ? Number(el.value) : el.value;
-  });
-
-  const outEl = document.getElementById('actionOutput');
-  outEl.innerHTML = '<div class="output-box">Running...</div>';
-  try {
-    const res = await fetch(`${API}/api/${moduleName}/${actionName}`, {
-      method: 'POST', headers: headers(), body: JSON.stringify({ connectionId, input })
-    });
-    const data = await res.json();
-    outEl.innerHTML = `<div class="output-box">${JSON.stringify(data, null, 2)}</div>`;
-  } catch (e) {
-    outEl.innerHTML = `<div class="msg error">${e.message}</div>`;
-  }
-}
-
-// --- Flow builder (simple ordered list, not a canvas) ---
-
-function addStep() {
-  stepDrafts.push({ module: modulesCache[0]?.name || '', action: '', connectionId: '', input: {} });
-  renderStepBuilder();
-}
-
-function removeStep(i) {
-  stepDrafts.splice(i, 1);
-  renderStepBuilder();
-}
-
-function renderStepBuilder() {
-  const el = document.getElementById('stepBuilder');
-  el.innerHTML = stepDrafts.map((s, i) => {
-    const mod = modulesCache.find(m => m.name === s.module) || modulesCache[0];
-    const actions = mod ? mod.actions : [];
-    const conns = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
-    const fields = ACTION_FIELDS[s.action] || [];
-    return `
-      <div class="step">
-        <div class="step-head"><span>STEP ${i+1}</span><button class="btn small danger" onclick="removeStep(${i})">remove</button></div>
-        <select onchange="stepDrafts[${i}].module=this.value; stepDrafts[${i}].action=''; renderStepBuilder();">
-          ${modulesCache.map(m => `<option value="${m.name}" ${m.name===s.module?'selected':''}>${m.name}</option>`).join('')}
-        </select>
-        <select onchange="stepDrafts[${i}].action=this.value; renderStepBuilder();">
-          <option value="">choose action</option>
-          ${actions.map(a => `<option value="${a}" ${a===s.action?'selected':''}>${a}</option>`).join('')}
-        </select>
-        <select onchange="stepDrafts[${i}].connectionId=this.value;">
-          <option value="">choose connection</option>
-          ${conns.map(c => `<option value="${c.id}" ${c.id===s.connectionId?'selected':''}>${c.account_label}</option>`).join('')}
-        </select>
-        ${fields.map(f => `
-          <div class="field">
-            <label>${f.label} ${i>0 ? '<span style=\"color:var(--text-dim)\">(or reference a prior step output below)</span>' : ''}</label>
-            <input onchange="stepDrafts[${i}].input['${f.name}']=this.value;" placeholder="${f.placeholder||''}" />
-          </div>`).join('')}
-      </div>`;
-  }).join('') || '<div class="empty">No steps yet.</div>';
-}
-
-async function saveFlow() {
-  const name = document.getElementById('flowName').value.trim();
-  if (!name) return alert('Name your flow first.');
-  const steps = stepDrafts.filter(s => s.module && s.action && s.connectionId).map(s => ({
-    module: s.module, action: s.action, connectionId: s.connectionId, inputMap: s.input
-  }));
-  if (steps.length === 0) return alert('Add at least one complete step.');
-
-  const res = await fetch(API + '/flows', { method: 'POST', headers: headers(), body: JSON.stringify({ name, steps }) });
-  const data = await res.json();
-  if (!res.ok) return alert(data.message || data.error);
-  document.getElementById('flowName').value = '';
-  stepDrafts = [];
-  addStep();
-  await loadFlows();
-}
-
-async function loadFlows() {
-  const res = await fetch(API + '/flows', { headers: headers() });
-  if (!res.ok) return;
-  const data = await res.json();
-  const el = document.getElementById('flowList');
-  el.innerHTML = (data.flows || []).map(f => `
-    <div class="flow-item">
-      <div>${f.name} <span class="conn-label">(${(f.sm_flow_steps||[]).length} steps)</span></div>
-      <div>
-        <button class="btn small" onclick="runFlowNow('${f.id}')">run</button>
-        <button class="btn small danger" onclick="deleteFlow('${f.id}')">delete</button>
-      </div>
-    </div>`).join('') || '<div class="empty">No flows saved yet.</div>';
-}
-
-async function runFlowNow(id) {
-  const res = await fetch(`${API}/flows/${id}/run`, { method: 'POST', headers: headers() });
-  const data = await res.json();
-  alert(`Run ${data.status}` + (data.error ? `: ${data.error}` : ''));
-}
-
-async function deleteFlow(id) {
-  await fetch(`${API}/flows/${id}`, { method: 'DELETE', headers: headers() });
-  await loadFlows();
-}
-
-// --- init ---
-if (apiKey) enterDashboard();
-</script>
+<script src="js/app.js"></script>
 </body>
 </html>

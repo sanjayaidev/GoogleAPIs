@@ -113,8 +113,11 @@ router.get('/google/callback', async (req, res) => {
       return res.status(500).send('Failed to save connection.');
     }
 
-    // Redirect back to your frontend UI - adjust to your actual app URL.
-    res.redirect(`${env.publicBaseUrl}/connected?provider=google&email=${encodeURIComponent(profile.email)}`);
+    // Redirect back to your frontend UI. Falls back to deriving the base URL
+    // from the incoming request if PUBLIC_BASE_URL/BASE_URL isn't set, so we
+    // never emit a literal "undefined" in the redirect location.
+    const base = env.publicBaseUrl || `${req.protocol}://${req.get('host')}`;
+    res.redirect(`${base}/connected?provider=google&email=${encodeURIComponent(profile.email)}`);
   } catch (err) {
     logger.error({ err }, '[oauth] token exchange failed');
     res.status(500).send('OAuth token exchange failed.');

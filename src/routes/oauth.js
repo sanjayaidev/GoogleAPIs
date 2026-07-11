@@ -3,7 +3,6 @@ const crypto = require('crypto');
 const { google } = require('googleapis');
 const env = require('../config/env');
 const { supabase, TABLES } = require('../lib/supabase');
-const { encrypt } = require('../lib/encryption');
 const { getModule } = require('../modules');
 const apiKeyAuth = require('../middleware/apiKeyAuth');
 const logger = require('../lib/logger');
@@ -102,8 +101,8 @@ router.get('/google/callback', async (req, res) => {
       user_id: entry.userId,
       provider: 'google',
       account_label: profile.email,
-      access_token: encrypt(tokens.access_token),
-      refresh_token: encrypt(tokens.refresh_token || ''),
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || '',
       expires_at: new Date(tokens.expiry_date).toISOString(),
       scopes: (tokens.scope || '').split(' '),
       status: 'active',

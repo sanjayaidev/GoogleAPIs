@@ -71,9 +71,15 @@ router.get('/google/callback', async (req, res) => {
       logger.warn('[oauth] No refresh_token returned - user may have connected before without revoking access');
     }
 
+    // Set credentials on the OAuth2 client so it can make authenticated requests
     client.setCredentials(tokens);
-    const oauth2 = google.oauth2({ version: 'v2', auth: client });
-    const { data: profile } = await oauth2.userinfo.get();
+    
+    // Use the OAuth2 client to make an authenticated request directly
+    // This is more reliable than using google.oauth2() wrapper
+    const userinfoRes = await client.request({
+      url: 'https://www.googleapis.com/oauth2/v2/userinfo',
+    });
+    const profile = userinfoRes.data;
 
     const { error: insertError } = await supabase.from(TABLES.CONNECTIONS).insert({
       user_id: entry.userId,

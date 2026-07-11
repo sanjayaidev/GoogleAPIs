@@ -108,14 +108,23 @@
 <div class="wrap">
   <div id="gate" class="gate">
     <h1>Connect to your gateway</h1>
-    <p>Register once to get an API key, or paste a key you already have.</p>
+    <p>Register once to get an API key, log in to get a new one, or paste a key you already have.</p>
     <div id="gateMsg"></div>
 
     <div id="registerForm">
       <div class="field"><label>Email</label><input id="regEmail" type="email" placeholder="you@example.com" /></div>
       <div class="field"><label>Password</label><input id="regPassword" type="password" placeholder="8+ characters" /></div>
       <button class="btn" id="registerBtn">Create account</button>
+      <div><button class="toggle-link" id="toggleToLoginBtn">I already have an account</button></div>
       <div><button class="toggle-link" id="toggleToPasteBtn">I already have an API key</button></div>
+    </div>
+
+    <div id="loginForm" style="display:none;">
+      <div class="field"><label>Email</label><input id="loginEmail" type="email" placeholder="you@example.com" /></div>
+      <div class="field"><label>Password</label><input id="loginPassword" type="password" placeholder="Your password" /></div>
+      <button class="btn" id="loginBtn">Log in</button>
+      <p style="color:var(--text-dim); font-size:12px; margin-top:8px;">Logging in issues a brand new API key (your old ones keep working too).</p>
+      <div><button class="toggle-link" id="toggleToRegisterFromLoginBtn">Need an account? Register instead</button></div>
     </div>
 
     <div id="pasteForm" style="display:none;">

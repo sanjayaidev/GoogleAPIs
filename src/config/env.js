@@ -20,11 +20,6 @@ module.exports = {
     serviceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
   },
 
-  encryption: {
-    key: required('ENCRYPTION_KEY'),
-    keyVersion: parseInt(process.env.ENCRYPTION_KEY_VERSION || '1', 10),
-  },
-
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,

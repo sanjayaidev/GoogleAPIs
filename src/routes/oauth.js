@@ -37,10 +37,20 @@ router.get('/google/start', apiKeyAuth, (req, res) => {
   pendingStates.set(state, { userId: req.user.id, moduleName, expiresAt: Date.now() + 10 * 60 * 1000 });
 
   const client = new google.auth.OAuth2(env.google.clientId, env.google.clientSecret, env.google.redirectUri);
+
+  // Always request the userinfo scope on top of whatever the module needs -
+  // the callback uses it to look up the connected account's email address,
+  // so without it the userinfo request 401s even though the module scopes
+  // (e.g. Gmail) were granted correctly.
+  const scope = Array.from(new Set([
+    ...mod.requiredScopes,
+    'https://www.googleapis.com/auth/userinfo.email',
+  ]));
+
   const url = client.generateAuthUrl({
     access_type: 'offline', // required to get a refresh_token
     prompt: 'consent', // ensures refresh_token is returned even on repeat connects
-    scope: mod.requiredScopes,
+    scope,
     state,
   });
 

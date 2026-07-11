@@ -2,7 +2,7 @@
 
 Module-based API gateway for Google + Meta services. Each provider is a self-contained
 module file (`src/modules/gmail.js`, etc.) exposing a fixed set of actions and triggers.
-Your own API key authenticates every call; OAuth connections are stored encrypted in Supabase.
+Your own API key authenticates every call; OAuth connections are stored in Supabase (add DB-level encryption/RLS if you need tokens encrypted at rest - see note below).
 
 ## What's included in this starter
 
@@ -12,7 +12,6 @@ Your own API key authenticates every call; OAuth connections are stored encrypte
   frontend project needed.
 - API key auth middleware (hash-based lookup, never stores raw keys)
 - Per-key rate limiting
-- AES-256-GCM encryption for OAuth tokens at rest
 - Supabase REST client (service_role, server-only) - `sm_` prefixed tables
 - Generic action router: `POST /api/:module/:action` dispatches to any registered module
 - Google OAuth flow: `/oauth/google/start` and `/oauth/google/callback` (state CSRF protected,
@@ -27,6 +26,8 @@ Your own API key authenticates every call; OAuth connections are stored encrypte
   sequential action calls with simple field-mapping and skip conditions
 - One fully-working module: **Gmail** (loadMails, sendMail, createDraft, reply, markAsRead,
   addLabel, + a newMail poll trigger)
+- Six more modules, same shape, same OAuth flow: **Calendar**, **Sheets**, **Docs**, **Drive**,
+  **Forms**, and **Google Business Profile** - see below for scopes and access notes.
 
 ## Using the dashboard
 
@@ -44,8 +45,11 @@ Your own API key authenticates every call; OAuth connections are stored encrypte
 
 1. `npm install`
 2. Copy `.env.example` to `.env` and fill in real values:
-   - Generate `ENCRYPTION_KEY`: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
    - Create a Supabase project, grab the URL + `service_role` key (Settings > API)
+   - OAuth tokens are stored as plain text in `sm_connections` by design (no app-level
+     `ENCRYPTION_KEY` anymore) - add encryption at the database layer (e.g. `pgcrypto`
+     column encryption, Supabase Vault, or disk-level encryption) if you need tokens
+     encrypted at rest; the app writes/reads them as plain strings either way.
    - Create a Google Cloud project, OAuth consent screen + credentials (Web application),
      add `GOOGLE_REDIRECT_URI` as an authorized redirect URI
    - Create a Meta App if/when you add the Meta module, set up webhook subscription
@@ -63,7 +67,7 @@ curl "http://localhost:3000/oauth/google/start?module=gmail" \
   -H "Authorization: Bearer sm_live_xxxx"
 # -> { authUrl: "https://accounts.google.com/o/oauth2/..." }
 # Open that URL in a browser, approve, get redirected to /oauth/google/callback,
-# which stores the encrypted connection and redirects to /connected?...
+# which stores the connection and redirects to /connected?...
 
 # 3. Call an action:
 curl -X POST http://localhost:3000/api/gmail/sendMail \
@@ -75,12 +79,47 @@ curl -X POST http://localhost:3000/api/gmail/sendMail \
   }'
 ```
 
-## Adding a new module (e.g. Calendar)
+## Modules
 
-1. Create `src/modules/calendar.js` following the exact same shape as `gmail.js`:
+Every module follows the same shape: `{ provider, requiredScopes, actions: {...}, triggers: {...} }`.
+The OAuth flow automatically requests exactly the scopes a module declares (plus a base
+`userinfo.email` scope used to label the connection), nothing more.
+
+| Module | Actions | Scopes |
+|---|---|---|
+| `gmail` | loadMails, sendMail, createDraft, reply, markAsRead, addLabel | gmail.readonly, gmail.send, gmail.modify |
+| `calendar` | listCalendars, listEvents, createEvent, updateEvent, deleteEvent | calendar.events, calendar.readonly |
+| `sheets` | createSpreadsheet, readRange, appendRow, updateRange, clearRange | spreadsheets |
+| `docs` | createDocument, getDocument, appendText, replaceAllText | documents |
+| `drive` | listFiles, getFile, uploadFile, createFolder, deleteFile, shareFile | drive (full - narrow to `drive.file` if you don't need to touch a user's existing files) |
+| `forms` | createForm, getForm, addQuestion, listResponses | forms.body, forms.responses.readonly |
+| `googleBusinessProfile` | listAccounts, listLocations, getLocation, getDailyMetrics, listReviews, replyToReview, deleteReviewReply | business.manage |
+
+**Google Business Profile access is gated separately from OAuth.** Unlike the other modules,
+these APIs are *not* open by default on a new Google Cloud project - you must submit an access
+request (Business Profile APIs → request access), show a legitimate use case, and have a
+Business Profile that's been verified and active for 60+ days with a matching business website.
+Approval typically takes days to weeks. Until then, calls will fail with a permission error even
+with valid tokens and the right scope. Reviews specifically live on the legacy
+`mybusiness.googleapis.com/v4` REST surface (not bundled in the `googleapis` npm package, so
+`googleBusinessProfile.js` calls it directly via the OAuth2 client) - Google has kept this one
+API version active for reviews/posts even though everything else moved to the split APIs.
+
+Also worth knowing: `forms.responses.readonly` and `forms.body` are Google *restricted* scopes,
+which means a production OAuth app (past 100 test users) needs to go through Google's sensitive-
+scope verification before general users can connect. `drive` (full) is similarly restricted.
+
+## Adding another module
+
+1. Create `src/modules/<name>.js` following the exact same shape as `gmail.js`:
    `{ provider, requiredScopes, actions: {...}, triggers: {...} }`
 2. Register it in `src/modules/index.js` (one line).
-3. Nothing else changes - the action router, OAuth flow, and rate limiter all work
+3. If it needs dashboard support for input fields with array/object shapes (not just flat
+   strings/numbers), add entries to `ACTION_FIELDS` in `public/js/app.js` - use dot-path names
+   like `"start.dateTime"` for nested objects, or `json: true` on a field for array/object input
+   parsed from a JSON textarea (see `calendar`'s `createEvent` and `sheets`'s `appendRow` for
+   examples of each).
+4. Nothing else changes - the action router, OAuth flow, and rate limiter all work
    generically against any module in the registry.
 
 ## Keep-alive
@@ -93,9 +132,8 @@ a GitHub Actions schedule) hitting `/health` every ~14 min instead, set
 
 ## Not included yet (next build steps)
 
-- Flow model (`sm_flows` / `sm_flow_steps` / `sm_flow_runs` tables already exist in the
-  migration) + the linear flow runner that chains action calls together
-- Signup/login + your own API key issuance endpoint (currently: insert rows manually)
-- Calendar, Sheets, Docs, Slides, Meta modules (Gmail is the reference implementation)
-- Scheduled trigger runner (node-cron per active flow, or a shared cron sweep)
-- Meta OAuth connect flow (Gmail's `/oauth/google/*` is the pattern to copy)
+- Meta module + Meta OAuth connect flow (Gmail's `/oauth/google/*` is the pattern to copy)
+- Scheduled trigger runner (node-cron per active flow, or a shared cron sweep) - the poll
+  functions on each module's `triggers` are written and ready, nothing calls them on a schedule yet
+- API key rotation/revocation endpoints beyond what `/auth/login` now provides (it issues a
+  fresh key on successful login; there's no explicit "revoke this specific key" endpoint yet)

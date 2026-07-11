@@ -7,6 +7,9 @@ Your own API key authenticates every call; OAuth connections are stored encrypte
 ## What's included in this starter
 
 - Express server with helmet, CORS, structured logging (pino)
+- **Dashboard UI served from this same app** (`/public/index.html`) - register/paste an API
+  key, connect Gmail, click-run actions, build and run simple linear flows. No separate
+  frontend project needed.
 - API key auth middleware (hash-based lookup, never stores raw keys)
 - Per-key rate limiting
 - AES-256-GCM encryption for OAuth tokens at rest
@@ -17,8 +20,25 @@ Your own API key authenticates every call; OAuth connections are stored encrypte
 - Meta webhook receiver with signature verification (`/webhooks/meta`), plus a generic
   webhook endpoint for things like Apps Script bound triggers (`/webhooks/generic/:source`)
 - Keep-alive self-ping (node-cron) to stop Render free tier from idling out
+- Auth routes: `POST /auth/register`, `POST /auth/login`
+- Connections: `GET /connections`, `DELETE /connections/:id`
+- Flows: `GET /flows`, `POST /flows`, `POST /flows/:id/run`, `DELETE /flows/:id` - the
+  linear for-loop runner (`src/lib/flowRunner.js`), no engine, no branching graph, just
+  sequential action calls with simple field-mapping and skip conditions
 - One fully-working module: **Gmail** (loadMails, sendMail, createDraft, reply, markAsRead,
   addLabel, + a newMail poll trigger)
+
+## Using the dashboard
+
+1. Start the server, open `http://localhost:3000` (or your Render URL) in a browser.
+2. Register an account - you'll get an API key shown once. It's saved in the browser's
+   localStorage automatically so you won't need to paste it again on that device.
+3. Click **connect** next to the Gmail module - this runs the real OAuth flow and redirects
+   back once authorized.
+4. Use **Run an action** to test single calls (send mail, load mails, etc.) against your
+   connected account.
+5. Use **Flow builder** to chain a few actions into a saved, ordered sequence, then hit
+   **run** on it from the flows list.
 
 ## Setup
 

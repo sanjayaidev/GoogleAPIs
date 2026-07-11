@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>sm-server · module gateway</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #14161b;
+    --panel: #1d2027;
+    --panel-2: #23272f;
+    --border: #2a2e38;
+    --text: #e7e9ed;
+    --text-dim: #8a8f9b;
+    --amber: #e3a83b;
+    --amber-dim: #6b5527;
+    --violet: #7c6fe0;
+    --violet-dim: #4a4380;
+    --danger: #e0637c;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+  a { color: inherit; }
+
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 28px; border-bottom: 1px solid var(--border);
+  }
+  .brand { font-family: var(--mono); font-size: 15px; letter-spacing: 0.02em; display: flex; align-items: center; gap: 10px; }
+  .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .brand small { color: var(--text-dim); font-weight: 400; }
+  .keypill { font-family: var(--mono); font-size: 12px; color: var(--text-dim); background: var(--panel); border: 1px solid var(--border); padding: 6px 10px; border-radius: 6px; display: flex; gap: 8px; align-items: center; }
+  .keypill button { background: none; border: none; color: var(--violet); cursor: pointer; font-family: var(--sans); font-size: 12px; padding: 0; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 28px 80px; }
+
+  .gate { max-width: 420px; margin: 80px auto; }
+  .gate h1 { font-family: var(--mono); font-size: 22px; margin-bottom: 6px; }
+  .gate p { color: var(--text-dim); font-size: 14px; margin-top: 0; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-family: var(--mono); }
+  .field input { width: 100%; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 6px; font-size: 14px; font-family: var(--sans); }
+  .field input:focus { outline: none; border-color: var(--violet); }
+  .btn { background: var(--violet); color: white; border: none; padding: 10px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--sans); }
+  .btn:hover { background: #6a5dd0; }
+  .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn.ghost:hover { border-color: var(--violet); }
+  .btn.small { padding: 6px 10px; font-size: 12px; }
+  .btn.danger { background: var(--danger); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .toggle-link { font-size: 13px; color: var(--violet); background: none; border: none; cursor: pointer; padding: 0; margin-top: 10px; }
+  .keybox { font-family: var(--mono); font-size: 13px; background: var(--panel-2); border: 1px solid var(--amber-dim); color: var(--amber); padding: 12px; border-radius: 6px; word-break: break-all; margin: 14px 0; }
+  .msg { font-size: 13px; padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; }
+  .msg.error { background: rgba(224,99,124,0.12); color: var(--danger); border: 1px solid rgba(224,99,124,0.3); }
+  .msg.success { background: rgba(227,168,59,0.1); color: var(--amber); border: 1px solid rgba(227,168,59,0.3); }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 22px; }
+  .panel h2 { font-family: var(--mono); font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin: 0 0 16px; }
+
+  .module-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .module-row:last-child { border-bottom: none; }
+  .module-name { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .socket { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-dim); position: relative; flex-shrink: 0; }
+  .socket.on { border-color: var(--amber); background: var(--amber); box-shadow: 0 0 10px var(--amber); }
+  .conn-label { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+
+  .action-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .action-list button { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: var(--sans); }
+  .action-list button:hover { border-color: var(--violet); }
+
+  select { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; font-size: 13px; font-family: var(--sans); width: 100%; margin-bottom: 10px; }
+
+  .form-panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-top: 12px; }
+  .form-panel h3 { font-family: var(--mono); font-size: 12px; color: var(--text-dim); margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .output-box { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border); padding: 10px; border-radius: 6px; margin-top: 10px; max-height: 240px; overflow: auto; white-space: pre-wrap; color: var(--text-dim); }
+
+  .step { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 10px; background: var(--panel-2); }
+  .step-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .step-head span { font-family: var(--mono); font-size: 12px; color: var(--amber); }
+  .flow-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .flow-item:last-child { border-bottom: none; }
+  .empty { color: var(--text-dim); font-size: 13px; padding: 10px 0; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="dot" id="brandDot"></span>sm-server <small>&nbsp;module gateway</small></div>
+  <div class="keypill" id="keyPill" style="display:none;">
+    <span id="keyPreview"></span>
+    <button onclick="logout()">disconnect</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div id="gate" class="gate">
+    <h1>Connect to your gateway</h1>
+    <p>Register once to get an API key, or paste a key you already have.</p>
+    <div id="gateMsg"></div>
+
+    <div id="registerForm">
+      <div class="field"><label>Email</label><input id="regEmail" type="email" placeholder="you@example.com" /></div>
+      <div class="field"><label>Password</label><input id="regPassword" type="password" placeholder="8+ characters" /></div>
+      <button class="btn" onclick="register()">Create account</button>
+      <div><button class="toggle-link" onclick="toggleGate()">I already have an API key</button></div>
+    </div>
+
+    <div id="pasteForm" style="display:none;">
+      <div class="field"><label>API Key</label><input id="pasteKey" type="text" placeholder="sm_live_..." /></div>
+      <button class="btn" onclick="usePastedKey()">Use this key</button>
+      <div><button class="toggle-link" onclick="toggleGate()">Register a new account instead</button></div>
+    </div>
+  </div>
+
+  <div id="dashboard" style="display:none;">
+    <div id="banner"></div>
+
+    <div class="grid">
+      <div>
+        <div class="panel">
+          <h2>Modules</h2>
+          <div id="moduleList"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Run an action</h2>
+          <select id="actionModule" onchange="renderActionForm()"></select>
+          <select id="actionConnection"></select>
+          <select id="actionName" onchange="renderActionForm()"></select>
+          <div id="actionFormFields" class="form-panel"></div>
+          <button class="btn" style="margin-top:10px;" onclick="runAction()">Run</button>
+          <div id="actionOutput"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="panel">
+          <h2>Flow builder</h2>
+          <p style="color:var(--text-dim); font-size:13px; margin-top:-8px;">A saved sequence of the actions above, run top to bottom. No branching engine — each step just runs, in order.</p>
+          <div class="field"><label>Flow name</label><input id="flowName" placeholder="e.g. New lead follow-up" /></div>
+          <div id="stepBuilder"></div>
+          <button class="btn ghost small" onclick="addStep()">+ Add step</button>
+          <div style="margin-top:12px;"><button class="btn" onclick="saveFlow()">Save flow</button></div>
+        </div>
+
+        <div class="panel">
+          <h2>Your flows</h2>
+          <div id="flowList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = ''; // same origin
+let apiKey = localStorage.getItem('sm_api_key') || null;
+let modulesCache = [];
+let connectionsCache = [];
+let stepDrafts = [];
+
+function headers() {
+  return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
+}
+
+function showMsg(el, text, type) {
+  el.innerHTML = `<div class="msg ${type}">${text}</div>`;
+}
+
+function toggleGate() {
+  const reg = document.getElementById('registerForm');
+  const paste = document.getElementById('pasteForm');
+  reg.style.display = reg.style.display === 'none' ? 'block' : 'none';
+  paste.style.display = paste.style.display === 'none' ? 'block' : 'none';
+}
+
+async function register() {
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const msgEl = document.getElementById('gateMsg');
+  try {
+    const res = await fetch(API + '/auth/register', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({email, password}) });
+    const data = await res.json();
+    if (!res.ok) return showMsg(msgEl, data.message || data.error, 'error');
+    msgEl.innerHTML = `<div class="msg success">Account created.</div><div class="keybox">${data.apiKey}</div><div class="msg error">Save this key now — it will not be shown again.</div>`;
+    apiKey = data.apiKey;
+    localStorage.setItem('sm_api_key', apiKey);
+    setTimeout(enterDashboard, 1800);
+  } catch (e) { showMsg(msgEl, 'Network error: ' + e.message, 'error'); }
+}
+
+function usePastedKey() {
+  const key = document.getElementById('pasteKey').value.trim();
+  if (!key) return;
+  apiKey = key;
+  localStorage.setItem('sm_api_key', apiKey);
+  enterDashboard();
+}
+
+function logout() {
+  localStorage.removeItem('sm_api_key');
+  apiKey = null;
+  location.href = '/';
+}
+
+async function enterDashboard() {
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  document.getElementById('keyPill').style.display = 'flex';
+  document.getElementById('keyPreview').textContent = apiKey.slice(0, 14) + '...';
+
+  await loadModules();
+  await loadConnections();
+  renderModuleList();
+  renderActionSelectors();
+  await loadFlows();
+  if (stepDrafts.length === 0) addStep();
+
+  const params = new URLSearchParams(location.search);
+  if (params.get('provider')) {
+    document.getElementById('banner').innerHTML =
+      `<div class="msg success">Connected ${params.get('provider')} account: ${params.get('email') || ''}</div>`;
+    history.replaceState({}, '', '/');
+    await loadConnections();
+    renderModuleList();
+    renderActionSelectors();
+  }
+}
+
+async function loadModules() {
+  const res = await fetch(API + '/api', { headers: headers() });
+  const data = await res.json();
+  modulesCache = data.modules || [];
+}
+
+async function loadConnections() {
+  const res = await fetch(API + '/connections', { headers: headers() });
+  if (!res.ok) return;
+  const data = await res.json();
+  connectionsCache = data.connections || [];
+}
+
+function renderModuleList() {
+  const el = document.getElementById('moduleList');
+  el.innerHTML = modulesCache.map(m => {
+    const conns = connectionsCache.filter(c => c.provider === m.provider && c.status === 'active');
+    const connected = conns.length > 0;
+    return `
+      <div class="module-row">
+        <div class="module-name">
+          <span class="socket ${connected ? 'on' : ''}"></span>
+          <div>
+            <div>${m.name}</div>
+            <div class="conn-label">${connected ? conns.map(c => c.account_label).join(', ') : 'not connected'}</div>
+          </div>
+        </div>
+        <button class="btn small ${connected ? 'ghost' : ''}" onclick="connectModule('${m.name}')">${connected ? '+ add another' : 'connect'}</button>
+      </div>`;
+  }).join('') || '<div class="empty">No modules registered on the server.</div>';
+}
+
+async function connectModule(moduleName) {
+  const res = await fetch(`${API}/oauth/google/start?module=${moduleName}`, { headers: headers() });
+  const data = await res.json();
+  if (data.authUrl) location.href = data.authUrl;
+  else alert(data.message || 'Could not start connection');
+}
+
+function renderActionSelectors() {
+  const modSel = document.getElementById('actionModule');
+  modSel.innerHTML = modulesCache.map(m => `<option value="${m.name}">${m.name}</option>`).join('');
+  updateActionNameOptions();
+  updateConnectionOptions();
+}
+
+function updateActionNameOptions() {
+  const modName = document.getElementById('actionModule').value;
+  const mod = modulesCache.find(m => m.name === modName);
+  const actSel = document.getElementById('actionName');
+  actSel.innerHTML = (mod ? mod.actions : []).map(a => `<option value="${a}">${a}</option>`).join('');
+}
+
+function updateConnectionOptions() {
+  const modName = document.getElementById('actionModule').value;
+  const mod = modulesCache.find(m => m.name === modName);
+  const connSel = document.getElementById('actionConnection');
+  const relevant = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
+  connSel.innerHTML = relevant.length
+    ? relevant.map(c => `<option value="${c.id}">${c.account_label}</option>`).join('')
+    : '<option value="">no connection - connect above first</option>';
+}
+
+// Known input fields per action (mirrors each module's inputSchema).
+// Hardcoded here for the UI since schemas live server-side as zod objects.
+const ACTION_FIELDS = {
+  loadMails: [{name:'query', label:'Search query', placeholder:'is:unread'}, {name:'maxResults', label:'Max results', placeholder:'10', type:'number'}],
+  sendMail: [{name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
+  createDraft: [{name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
+  reply: [{name:'threadId', label:'Thread ID'}, {name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
+  markAsRead: [{name:'messageId', label:'Message ID'}],
+  addLabel: [{name:'messageId', label:'Message ID'}, {name:'labelId', label:'Label ID'}],
+};
+
+function fieldsHtml(fields, prefix) {
+  return fields.map(f => `
+    <div class="field">
+      <label>${f.label}</label>
+      ${f.textarea
+        ? `<textarea id="${prefix}_${f.name}" rows="3" style="width:100%; background:var(--panel); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; font-family:var(--sans);" placeholder="${f.placeholder||''}"></textarea>`
+        : `<input id="${prefix}_${f.name}" type="${f.type||'text'}" placeholder="${f.placeholder||''}" />`}
+    </div>`).join('');
+}
+
+function renderActionForm() {
+  updateActionNameOptions();
+  updateConnectionOptions();
+  const actionName = document.getElementById('actionName').value;
+  const fields = ACTION_FIELDS[actionName] || [];
+  document.getElementById('actionFormFields').innerHTML =
+    `<h3>${actionName} inputs</h3>` + (fields.length ? fieldsHtml(fields, 'act') : '<div class="empty">No inputs required.</div>');
+}
+
+async function runAction() {
+  const moduleName = document.getElementById('actionModule').value;
+  const actionName = document.getElementById('actionName').value;
+  const connectionId = document.getElementById('actionConnection').value;
+  const fields = ACTION_FIELDS[actionName] || [];
+  const input = {};
+  fields.forEach(f => {
+    const el = document.getElementById('act_' + f.name);
+    if (!el || el.value === '') return;
+    input[f.name] = f.type === 'number' ? Number(el.value) : el.value;
+  });
+
+  const outEl = document.getElementById('actionOutput');
+  outEl.innerHTML = '<div class="output-box">Running...</div>';
+  try {
+    const res = await fetch(`${API}/api/${moduleName}/${actionName}`, {
+      method: 'POST', headers: headers(), body: JSON.stringify({ connectionId, input })
+    });
+    const data = await res.json();
+    outEl.innerHTML = `<div class="output-box">${JSON.stringify(data, null, 2)}</div>`;
+  } catch (e) {
+    outEl.innerHTML = `<div class="msg error">${e.message}</div>`;
+  }
+}
+
+// --- Flow builder (simple ordered list, not a canvas) ---
+
+function addStep() {
+  stepDrafts.push({ module: modulesCache[0]?.name || '', action: '', connectionId: '', input: {} });
+  renderStepBuilder();
+}
+
+function removeStep(i) {
+  stepDrafts.splice(i, 1);
+  renderStepBuilder();
+}
+
+function renderStepBuilder() {
+  const el = document.getElementById('stepBuilder');
+  el.innerHTML = stepDrafts.map((s, i) => {
+    const mod = modulesCache.find(m => m.name === s.module) || modulesCache[0];
+    const actions = mod ? mod.actions : [];
+    const conns = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
+    const fields = ACTION_FIELDS[s.action] || [];
+    return `
+      <div class="step">
+        <div class="step-head"><span>STEP ${i+1}</span><button class="btn small danger" onclick="removeStep(${i})">remove</button></div>
+        <select onchange="stepDrafts[${i}].module=this.value; stepDrafts[${i}].action=''; renderStepBuilder();">
+          ${modulesCache.map(m => `<option value="${m.name}" ${m.name===s.module?'selected':''}>${m.name}</option>`).join('')}
+        </select>
+        <select onchange="stepDrafts[${i}].action=this.value; renderStepBuilder();">
+          <option value="">choose action</option>
+          ${actions.map(a => `<option value="${a}" ${a===s.action?'selected':''}>${a}</option>`).join('')}
+        </select>
+        <select onchange="stepDrafts[${i}].connectionId=this.value;">
+          <option value="">choose connection</option>
+          ${conns.map(c => `<option value="${c.id}" ${c.id===s.connectionId?'selected':''}>${c.account_label}</option>`).join('')}
+        </select>
+        ${fields.map(f => `
+          <div class="field">
+            <label>${f.label} ${i>0 ? '<span style=\"color:var(--text-dim)\">(or reference a prior step output below)</span>' : ''}</label>
+            <input onchange="stepDrafts[${i}].input['${f.name}']=this.value;" placeholder="${f.placeholder||''}" />
+          </div>`).join('')}
+      </div>`;
+  }).join('') || '<div class="empty">No steps yet.</div>';
+}
+
+async function saveFlow() {
+  const name = document.getElementById('flowName').value.trim();
+  if (!name) return alert('Name your flow first.');
+  const steps = stepDrafts.filter(s => s.module && s.action && s.connectionId).map(s => ({
+    module: s.module, action: s.action, connectionId: s.connectionId, inputMap: s.input
+  }));
+  if (steps.length === 0) return alert('Add at least one complete step.');
+
+  const res = await fetch(API + '/flows', { method: 'POST', headers: headers(), body: JSON.stringify({ name, steps }) });
+  const data = await res.json();
+  if (!res.ok) return alert(data.message || data.error);
+  document.getElementById('flowName').value = '';
+  stepDrafts = [];
+  addStep();
+  await loadFlows();
+}
+
+async function loadFlows() {
+  const res = await fetch(API + '/flows', { headers: headers() });
+  if (!res.ok) return;
+  const data = await res.json();
+  const el = document.getElementById('flowList');
+  el.innerHTML = (data.flows || []).map(f => `
+    <div class="flow-item">
+      <div>${f.name} <span class="conn-label">(${(f.sm_flow_steps||[]).length} steps)</span></div>
+      <div>
+        <button class="btn small" onclick="runFlowNow('${f.id}')">run</button>
+        <button class="btn small danger" onclick="deleteFlow('${f.id}')">delete</button>
+      </div>
+    </div>`).join('') || '<div class="empty">No flows saved yet.</div>';
+}
+
+async function runFlowNow(id) {
+  const res = await fetch(`${API}/flows/${id}/run`, { method: 'POST', headers: headers() });
+  const data = await res.json();
+  alert(`Run ${data.status}` + (data.error ? `: ${data.error}` : ''));
+}
+
+async function deleteFlow(id) {
+  await fetch(`${API}/flows/${id}`, { method: 'DELETE', headers: headers() });
+  await loadFlows();
+}
+
+// --- init ---
+if (apiKey) enterDashboard();
+</script>
+</body>
+</html>

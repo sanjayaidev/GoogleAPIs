@@ -17,11 +17,11 @@ function formsClient(connection) {
 
 module.exports = {
   provider: 'google',
-  // forms scopes + drive.readonly for listing forms
+  // forms scopes + drive for listing forms (needs full drive scope to access user's forms)
   requiredScopes: [
     'https://www.googleapis.com/auth/forms.body',
     'https://www.googleapis.com/auth/forms.responses.readonly',
-    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive',
   ],
 
   actions: {

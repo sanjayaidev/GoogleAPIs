@@ -189,6 +189,68 @@ module.exports = {
         return { success: true };
       },
     },
+
+    // --- Local Posts (legacy v4 REST - same surface as reviews) ---
+
+    listPosts: {
+      inputSchema: z.object({
+        accountId: z.string(), // e.g. "accounts/123456789"
+        locationId: z.string(), // e.g. "locations/987654321"
+      }),
+      outputSchema: z.object({ posts: z.array(z.any()) }),
+      handler: async ({ connection, input }) => {
+        const data = await mybusinessV4Request(connection, {
+          path: `/${input.accountId}/${input.locationId}/localPosts`,
+        });
+        return { posts: data.localPosts || [] };
+      },
+    },
+
+    createPost: {
+      inputSchema: z.object({
+        accountId: z.string(),
+        locationId: z.string(),
+        summary: z.string(),
+        // STANDARD is the plain update-style post; EVENT/OFFER/ALERT need
+        // extra fields the legacy v4 API supports but this starter doesn't
+        // expose yet - keep it simple and add those later if needed.
+        topicType: z.enum(['STANDARD', 'EVENT', 'OFFER', 'ALERT']).optional().default('STANDARD'),
+        actionUrl: z.string().optional(),
+      }),
+      outputSchema: z.object({ post: z.any() }),
+      handler: async ({ connection, input }) => {
+        const body = {
+          languageCode: 'en-US',
+          summary: input.summary,
+          topicType: input.topicType,
+        };
+        if (input.actionUrl) {
+          body.callToAction = { actionType: 'LEARN_MORE', url: input.actionUrl };
+        }
+        const data = await mybusinessV4Request(connection, {
+          method: 'POST',
+          path: `/${input.accountId}/${input.locationId}/localPosts`,
+          body,
+        });
+        return { post: data };
+      },
+    },
+
+    deletePost: {
+      inputSchema: z.object({
+        accountId: z.string(),
+        locationId: z.string(),
+        postId: z.string(), // the post's short name, e.g. "localPosts/abc123"
+      }),
+      outputSchema: z.object({ success: z.boolean() }),
+      handler: async ({ connection, input }) => {
+        await mybusinessV4Request(connection, {
+          method: 'DELETE',
+          path: `/${input.accountId}/${input.locationId}/localPosts/${input.postId}`,
+        });
+        return { success: true };
+      },
+    },
   },
 
   triggers: {

@@ -382,12 +382,16 @@ const ACTION_FIELDS = {
   // --- googleBusinessProfile ---
   listAccounts: [],
   listLocations: [
-    {name:'accountId', label:'Account ID', placeholder:'accounts/123456789'},
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
     {name:'maxResults', label:'Max results', placeholder:'20', type:'number'},
   ],
-  getLocation: [{name:'locationId', label:'Location ID', placeholder:'locations/987654321'}],
+  getLocation: [
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+  ],
   getDailyMetrics: [
-    {name:'locationId', label:'Location ID', placeholder:'locations/987654321'},
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
     {name:'metric', label:'Metric', type:'select', options:[
       'BUSINESS_IMPRESSIONS_DESKTOP_MAPS','BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
       'BUSINESS_IMPRESSIONS_MOBILE_MAPS','BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
@@ -397,19 +401,35 @@ const ACTION_FIELDS = {
     {name:'endDate', label:'End date', placeholder:'2026-07-12'},
   ],
   listReviews: [
-    {name:'accountId', label:'Account ID', placeholder:'accounts/123456789'},
-    {name:'locationId', label:'Location ID', placeholder:'locations/987654321'},
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
   ],
   replyToReview: [
-    {name:'accountId', label:'Account ID'},
-    {name:'locationId', label:'Location ID'},
-    {name:'reviewId', label:'Review ID'},
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+    {name:'reviewId', label:'Select Review', type:'resource', resourceType:'gbpReview', dependsOn:'accountId,locationId'},
     {name:'comment', label:'Reply comment', textarea:true},
   ],
   deleteReviewReply: [
-    {name:'accountId', label:'Account ID'},
-    {name:'locationId', label:'Location ID'},
-    {name:'reviewId', label:'Review ID'},
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+    {name:'reviewId', label:'Select Review', type:'resource', resourceType:'gbpReview', dependsOn:'accountId,locationId'},
+  ],
+  listPosts: [
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+  ],
+  createPost: [
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+    {name:'summary', label:'Post text', textarea:true},
+    {name:'topicType', label:'Post type', type:'select', options:['STANDARD','EVENT','OFFER','ALERT']},
+    {name:'actionUrl', label:'Learn more URL (optional)'},
+  ],
+  deletePost: [
+    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+    {name:'postId', label:'Select Post', type:'resource', resourceType:'gbpPost', dependsOn:'accountId,locationId'},
   ],
 };
 
@@ -453,6 +473,172 @@ function buildInputFromFields(fields, idPrefix) {
   return input;
 }
 
+// --- Resource dropdowns for the "Run an action" panel ---
+// Mirrors the flow-builder canvas's resource-loading logic so every module
+// (sheets, calendar, drive, forms, Business Profile locations/reviews/
+// posts, etc.) can be picked from a dropdown here too, instead of pasting
+// IDs. Results are cached by resourceType + parent field values, so once
+// something has been fetched once (e.g. "List accounts"), picking an action
+// that needs that same ID later reuses the cached list instead of forcing
+// another manual fetch.
+const resourceCache = {}; // key: `${resourceType}|${depValuesJoined}` -> [{value,label}]
+
+function dependsOnNames(dependsOn) {
+  return (dependsOn || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function resourceCacheKey(resourceType, depNames, prefix) {
+  const depVals = depNames.map(dep => {
+    const el = document.getElementById(prefix + '_' + dep);
+    return el ? el.value : '';
+  });
+  return `${resourceType}|${depVals.join('|')}`;
+}
+
+function cacheResourceOutput(resourceType, depNames, prefix, options) {
+  resourceCache[resourceCacheKey(resourceType, depNames, prefix)] = options;
+}
+
+// Recognizes the shape of common list-action outputs and turns them into
+// {value,label} dropdown options - used to seed the cache from whatever the
+// person just fetched, not just from an explicit "Load options" click.
+function optionsFromActionOutput(output) {
+  if (!output) return null;
+  if (output.spreadsheets) return { resourceType: 'spreadsheet', options: output.spreadsheets.map(s => ({ value: s.id, label: s.name })) };
+  if (output.sheets) return { resourceType: 'sheet', options: output.sheets.map(s => ({ value: s.title, label: s.title })) };
+  if (output.calendars) return { resourceType: 'calendar', options: output.calendars.map(c => ({ value: c.id, label: c.name || c.summary })) };
+  if (output.files) return { resourceType: 'driveFile', options: output.files.map(f => ({ value: f.id, label: f.name })) };
+  if (output.folders) return { resourceType: 'driveFolder', options: output.folders.map(f => ({ value: f.id, label: f.name })) };
+  if (output.forms) return { resourceType: 'form', options: output.forms.map(f => ({ value: f.id, label: f.name })) };
+  if (output.accounts) return { resourceType: 'gbpAccount', options: output.accounts.map(a => ({ value: a.name, label: a.accountName || a.name })) };
+  if (output.locations) return { resourceType: 'gbpLocation', options: output.locations.map(l => ({ value: l.name, label: l.title || l.name })) };
+  if (output.reviews) return { resourceType: 'gbpReview', options: output.reviews.map(r => ({
+    value: r.reviewId || r.name, label: `${r.reviewer?.displayName || 'Anonymous'} - ${(r.comment || '').slice(0, 40)}`,
+  })) };
+  if (output.posts) return { resourceType: 'gbpPost', options: output.posts.map(p => ({
+    value: (p.name || '').split('/').pop() || p.name, label: (p.summary || p.name || '').slice(0, 50),
+  })) };
+  return null;
+}
+
+// The standard parent-field chain each resource type is fetched within -
+// used to key the cache consistently regardless of which action produced
+// the data (e.g. listLocations' output is keyed by the accountId it used,
+// so a later field needing gbpLocation for that same account finds it).
+const RESOURCE_DEPENDS = {
+  spreadsheet: [], sheet: ['spreadsheetId'], calendar: [], driveFile: [], driveFolder: [],
+  form: [], gbpAccount: [], gbpLocation: ['accountId'], gbpReview: ['accountId', 'locationId'], gbpPost: ['accountId', 'locationId'],
+};
+
+// Maps a dropdown's resourceType to the backend action that fetches it.
+function resourceFetchPlan(resourceType) {
+  switch (resourceType) {
+    case 'spreadsheet': return { action: 'listSpreadsheets' };
+    case 'sheet': return { action: 'listSheets' };
+    case 'calendar': return { action: 'getCalendars' };
+    case 'driveFile': return { action: 'getFiles' };
+    case 'driveFolder': return { action: 'getFolders' };
+    case 'form': return { action: 'listForms' };
+    case 'gbpAccount': return { action: 'listAccounts' };
+    case 'gbpLocation': return { action: 'listLocations' };
+    case 'gbpReview': return { action: 'listReviews' };
+    case 'gbpPost': return { action: 'listPosts' };
+    default: return null;
+  }
+}
+
+async function loadResourceOptions(prefix, resourceType, dependsOnStr, fieldName, moduleName) {
+  const selectEl = document.getElementById(prefix + '_' + fieldName);
+  if (!selectEl) return;
+  const connSel = document.getElementById(prefix === 'act' ? 'actionConnection' : (prefix + '_connectionId'));
+  const connectionId = connSel ? connSel.value : '';
+  if (!connectionId) { showMsg(document.getElementById('banner'), 'Choose a connected account before loading options.', 'error'); return; }
+
+  const depNames = dependsOnNames(dependsOnStr);
+  for (const dep of depNames) {
+    const depEl = document.getElementById(prefix + '_' + dep);
+    if (!depEl || !depEl.value) {
+      showMsg(document.getElementById('banner'), `Select ${dep} first.`, 'error');
+      return;
+    }
+  }
+  const plan = resourceFetchPlan(resourceType);
+  if (!plan) return;
+
+  const originalHtml = selectEl.innerHTML;
+  selectEl.innerHTML = '<option value="">Loading...</option>';
+  selectEl.disabled = true;
+  try {
+    const inputPayload = {};
+    depNames.forEach(dep => { inputPayload[dep] = document.getElementById(prefix + '_' + dep).value; });
+    const res = await fetch(`${API}/api/${moduleName}/${plan.action}`, {
+      method: 'POST', headers: headers(), body: JSON.stringify({ connectionId, input: inputPayload }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || 'Failed to load options');
+
+    const parsed = optionsFromActionOutput(data.output) || { options: [] };
+    cacheResourceOutput(resourceType, depNames, prefix, parsed.options);
+    fillResourceSelect(selectEl, parsed.options);
+    if (parsed.options.length === 0) showMsg(document.getElementById('banner'), 'No results found for that dropdown.', 'error');
+  } catch (e) {
+    selectEl.innerHTML = originalHtml;
+    showMsg(document.getElementById('banner'), 'Error loading options: ' + e.message, 'error');
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+function fillResourceSelect(selectEl, options) {
+  const currentVal = selectEl.value;
+  selectEl.innerHTML = '<option value="">Select...</option>' +
+    options.map(o => `<option value="${o.value}" ${o.value === currentVal ? 'selected' : ''}>${o.label}</option>`).join('');
+}
+
+// After rendering a set of resource fields, silently reuse anything already
+// cached (e.g. from a previous "Run an action" fetch) so the person doesn't
+// have to click "Load options" again for data already fetched.
+function prefillCachedResourceFields(fields, prefix) {
+  fields.filter(f => f.type === 'resource').forEach(f => {
+    const depNames = dependsOnNames(f.dependsOn);
+    const depsReady = depNames.every(dep => {
+      const el = document.getElementById(prefix + '_' + dep);
+      return el && el.value;
+    });
+    if (!depsReady) return;
+    const key = resourceCacheKey(f.resourceType, depNames, prefix);
+    const cached = resourceCache[key];
+    if (cached) {
+      const selectEl = document.getElementById(prefix + '_' + f.name);
+      if (selectEl) fillResourceSelect(selectEl, cached);
+    }
+  });
+}
+
+function wireResourceFieldDelegation(containerId, prefix, getModuleName) {
+  const container = document.getElementById(containerId);
+  if (!container || container.dataset.resourceWired) return;
+  container.dataset.resourceWired = '1';
+
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('.load-resources-btn');
+    if (!btn) return;
+    const pfield = btn.closest('.field[data-resource-field]');
+    loadResourceOptions(prefix, btn.dataset.resourceType, pfield ? pfield.dataset.dependsOn : '', btn.dataset.resourceField, getModuleName());
+  });
+
+  container.addEventListener('change', (e) => {
+    const select = e.target.closest('select.resource-select');
+    if (!select) return;
+    const fieldName = select.id.slice(prefix.length + 1);
+    const moduleName = getModuleName();
+    const actionName = document.getElementById('actionName') ? document.getElementById('actionName').value : '';
+    const fields = ACTION_FIELDS[actionName] || [];
+    const dependents = fields.filter(f => dependsOnNames(f.dependsOn).includes(fieldName));
+    dependents.forEach(dep => loadResourceOptions(prefix, dep.resourceType, dep.dependsOn, dep.name, moduleName));
+  });
+}
+
 function fieldsHtml(fields, prefix) {
   return fields.map(f => `
     <div class="field" ${f.type === 'resource' ? `data-resource-field="${f.name}" data-resource-type="${f.resourceType}" data-depends-on="${f.dependsOn || ''}"` : ''}>
@@ -488,6 +674,7 @@ function renderActionFields() {
   const fields = ACTION_FIELDS[actionName] || [];
   document.getElementById('actionFormFields').innerHTML =
     `<h3>${actionName} inputs</h3>` + (fields.length ? fieldsHtml(fields, 'act') : '<div class="empty">No inputs required.</div>');
+  prefillCachedResourceFields(fields, 'act');
 }
 
 async function runAction() {
@@ -505,6 +692,15 @@ async function runAction() {
     });
     const data = await res.json();
     outEl.innerHTML = `<div class="output-box">${JSON.stringify(data, null, 2)}</div>`;
+
+    // If this run's output looks like a list of resources (accounts,
+    // locations, reviews, posts, spreadsheets, sheets, calendars, files,
+    // forms...), cache it so the next action you pick can reuse it in its
+    // dropdown instead of you having to fetch it again.
+    const parsed = optionsFromActionOutput(data.output);
+    if (parsed) {
+      cacheResourceOutput(parsed.resourceType, RESOURCE_DEPENDS[parsed.resourceType] || [], 'act', parsed.options);
+    }
   } catch (e) {
     outEl.innerHTML = `<div class="msg error">${e.message}</div>`;
   }
@@ -529,6 +725,7 @@ function renderStepBuilder() {
     const actions = mod ? mod.actions : [];
     const conns = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
     const fields = ACTION_FIELDS[s.action] || [];
+    const prefix = `step${i}`;
     return `
       <div class="step" data-step-index="${i}">
         <div class="step-head"><span>STEP ${i+1}</span><button class="btn small danger" data-remove-step="${i}">remove</button></div>
@@ -539,17 +736,15 @@ function renderStepBuilder() {
           <option value="">choose action</option>
           ${actions.map(a => `<option value="${a}" ${a===s.action?'selected':''}>${a}</option>`).join('')}
         </select>
-        <select data-step-field="connectionId" data-step-index="${i}">
+        <select id="${prefix}_connectionId" data-step-field="connectionId" data-step-index="${i}">
           <option value="">choose connection</option>
           ${conns.map(c => `<option value="${c.id}" ${c.id===s.connectionId?'selected':''}>${c.account_label}</option>`).join('')}
         </select>
-        ${fields.map(f => `
-          <div class="field">
-            <label>${f.label} ${i>0 ? '<span style="color:var(--text-dim)">(or reference a prior step output below)</span>' : ''}</label>
-            <input data-step-index="${i}" data-step-input-field="${f.name}" placeholder="${f.placeholder||''}" />
-          </div>`).join('')}
+        ${fields.length ? fieldsHtml(fields, prefix) : ''}
+        ${fields.length && i > 0 ? '<div class="hint" style="margin-top:4px;">Dropdowns fetch fresh each step - or reference a prior step\'s output directly below.</div>' : ''}
       </div>`;
   }).join('') || '<div class="empty">No steps yet.</div>';
+  stepDrafts.forEach((s, i) => prefillCachedResourceFields(ACTION_FIELDS[s.action] || [], `step${i}`));
 }
 
 // Event delegation for the step builder - content is fully replaced on
@@ -559,7 +754,15 @@ function wireStepBuilderDelegation() {
 
   el.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-remove-step]');
-    if (btn) removeStep(Number(btn.dataset.removeStep));
+    if (btn) { removeStep(Number(btn.dataset.removeStep)); return; }
+
+    const loadBtn = e.target.closest('.load-resources-btn');
+    if (loadBtn) {
+      const stepEl = e.target.closest('[data-step-index]');
+      const i = Number(stepEl.dataset.stepIndex);
+      const pfield = loadBtn.closest('.field[data-resource-field]');
+      loadResourceOptions(`step${i}`, loadBtn.dataset.resourceType, pfield ? pfield.dataset.dependsOn : '', loadBtn.dataset.resourceField, stepDrafts[i].module);
+    }
   });
 
   el.addEventListener('change', (e) => {
@@ -572,11 +775,30 @@ function wireStepBuilderDelegation() {
       if (field === 'module' || field === 'action') renderStepBuilder();
       return;
     }
-    const input = e.target.closest('input[data-step-input-field]');
-    if (input) {
-      const i = Number(input.dataset.stepIndex);
-      stepDrafts[i].input[input.dataset.stepInputField] = input.value;
+
+    // Resource dropdowns and everything else fieldsHtml renders share the
+    // `step{i}_{fieldName}` id scheme - route by parsing that id.
+    const target = e.target.closest('[id^="step"]');
+    if (target && /^step(\d+)_(.+)$/.test(target.id)) {
+      const [, iStr, fieldName] = target.id.match(/^step(\d+)_(.+)$/);
+      const i = Number(iStr);
+      stepDrafts[i].input[fieldName] = target.type === 'checkbox' ? target.checked : target.value;
+
+      // Selecting a resource this step's other fields depend on reloads them.
+      if (target.classList.contains('resource-select')) {
+        const fields = ACTION_FIELDS[stepDrafts[i].action] || [];
+        const dependents = fields.filter(f => dependsOnNames(f.dependsOn).includes(fieldName));
+        dependents.forEach(dep => loadResourceOptions(`step${i}`, dep.resourceType, dep.dependsOn, dep.name, stepDrafts[i].module));
+      }
     }
+  });
+
+  el.addEventListener('input', (e) => {
+    const target = e.target;
+    if (!target.id || target.tagName === 'SELECT') return;
+    const m = target.id.match(/^step(\d+)_(.+)$/);
+    if (!m) return;
+    stepDrafts[Number(m[1])].input[m[2]] = target.value;
   });
 }
 
@@ -664,6 +886,7 @@ function init() {
   document.getElementById('actionModule').addEventListener('change', renderActionForm);
   document.getElementById('actionName').addEventListener('change', renderActionFields);
   document.getElementById('runActionBtn').addEventListener('click', runAction);
+  wireResourceFieldDelegation('actionFormFields', 'act', () => document.getElementById('actionModule').value);
 
   document.getElementById('addStepBtn').addEventListener('click', addStep);
   document.getElementById('saveFlowBtn').addEventListener('click', saveFlow);

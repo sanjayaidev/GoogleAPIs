@@ -41,13 +41,15 @@ const NODE_DEFS = {
   sheets: {
     label: 'Google Sheets', icon: '📊', color: '#0f9d58',
     triggers: [
-      { id: 'rowAdded', label: 'On row added', fields: [
+      // Inclusive trigger: "Trigger on" lets you check Added, Updated, or
+      // both - no need to add two separate nodes for one sheet.
+      { id: 'rowChange', label: 'On row added / updated', fields: [
         { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
         { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
-      ]},
-      { id: 'rowUpdated', label: 'On row updated', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
-        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
+        { name: 'events', label: 'Trigger on', type: 'checkboxGroup', default: ['added', 'updated'], options: [
+          { value: 'added', label: 'Row added' },
+          { value: 'updated', label: 'Row updated' },
+        ]},
       ]},
     ],
     actions: [
@@ -218,18 +220,23 @@ const NODE_DEFS = {
     label: 'Business Profile', icon: '🏬', color: '#34a853',
     triggers: [
       { id: 'reviewsSnapshot', label: 'On new review (snapshot poll)', fields: [
-        { name: 'accountId', label: 'Account ID', placeholder: 'accounts/123456789' },
-        { name: 'locationId', label: 'Location ID', placeholder: 'locations/987654321' },
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
       ]},
     ],
     actions: [
       { id: 'listAccounts', label: 'List accounts', fields: [] },
       { id: 'listLocations', label: 'List locations', fields: [
-        { name: 'accountId', label: 'Account ID' }, { name: 'maxResults', label: 'Max results', type: 'number' },
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'maxResults', label: 'Max results', type: 'number' },
       ]},
-      { id: 'getLocation', label: 'Get location', fields: [{ name: 'locationId', label: 'Location ID' }] },
+      { id: 'getLocation', label: 'Get location', fields: [
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+      ]},
       { id: 'getDailyMetrics', label: 'Get daily metrics', fields: [
-        { name: 'locationId', label: 'Location ID' },
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
         { name: 'metric', label: 'Metric', type: 'select', options: [
           'BUSINESS_IMPRESSIONS_DESKTOP_MAPS','BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
           'BUSINESS_IMPRESSIONS_MOBILE_MAPS','BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
@@ -239,15 +246,35 @@ const NODE_DEFS = {
         { name: 'endDate', label: 'End date', placeholder: '2026-07-12' },
       ]},
       { id: 'listReviews', label: 'List reviews', fields: [
-        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
       ]},
       { id: 'replyToReview', label: 'Reply to review', fields: [
-        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
-        { name: 'reviewId', label: 'Review ID' }, { name: 'comment', label: 'Reply comment', type: 'textarea' },
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+        { name: 'reviewId', label: 'Select Review', type: 'resource', resourceType: 'gbpReview', dependsOn: 'accountId,locationId' },
+        { name: 'comment', label: 'Reply comment', type: 'textarea' },
       ]},
       { id: 'deleteReviewReply', label: 'Delete review reply', fields: [
-        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
-        { name: 'reviewId', label: 'Review ID' },
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+        { name: 'reviewId', label: 'Select Review', type: 'resource', resourceType: 'gbpReview', dependsOn: 'accountId,locationId' },
+      ]},
+      { id: 'listPosts', label: 'List posts', fields: [
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+      ]},
+      { id: 'createPost', label: 'Create post', fields: [
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+        { name: 'summary', label: 'Post text', type: 'textarea' },
+        { name: 'topicType', label: 'Post type', type: 'select', options: ['STANDARD','EVENT','OFFER','ALERT'] },
+        { name: 'actionUrl', label: 'Learn more URL (optional)' },
+      ]},
+      { id: 'deletePost', label: 'Delete post', fields: [
+        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
+        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+        { name: 'postId', label: 'Select Post', type: 'resource', resourceType: 'gbpPost', dependsOn: 'accountId,locationId' },
       ]},
     ],
   },

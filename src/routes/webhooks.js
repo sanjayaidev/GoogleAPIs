@@ -68,6 +68,13 @@ router.post('/generic/:source', express.json(), (req, res) => {
 
   // TODO: validate `secret` against a per-user webhook secret stored in
   // sm_connections or a dedicated sm_webhook_secrets table once that's built.
+  //
+  // TODO (sheets): once this is wired up to actually find and run matching
+  // flows, the sheets `rowChange` trigger is inclusive - its trigger_config
+  // carries `events: ['added']`, `['updated']`, or both. Only fire a flow
+  // whose config.events includes `data.eventType` ('added'|'updated'), e.g.
+  //   const flowTriggerConfig = flow.trigger_config; // { module, trigger, config }
+  //   if (source === 'sheets' && !flowTriggerConfig.config.events.includes(data.eventType)) return;
   logger.info({ source, data }, '[webhooks] generic event received');
 
   res.status(200).json({ received: true });

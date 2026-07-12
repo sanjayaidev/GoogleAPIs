@@ -1,0 +1,734 @@
+diff --git a/public/index.html b/public/index.html
+index a59b710..f1650ae 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -51,6 +51,12 @@
+   .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; font-family: var(--mono); }
+   .field input { width: 100%; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 6px; font-size: 14px; font-family: var(--sans); }
+   .field input:focus { outline: none; border-color: var(--violet); }
++  .field select, .field textarea { width: 100%; background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 6px; font-size: 14px; font-family: var(--sans); }
++  .field select:focus, .field textarea:focus { outline: none; border-color: var(--violet); }
++  .field .resource-select { margin-bottom: 6px; }
++  .field .hint, .hint { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
++  .tbtn { border: 1px solid var(--border); background: var(--panel-2); color: var(--text); border-radius: 6px; padding: 4px 10px; font-size: 11px; font-family: var(--sans); cursor: pointer; }
++  .tbtn:hover { border-color: var(--violet); }
+   .btn { background: var(--violet); color: white; border: none; padding: 10px 16px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--sans); }
+   .btn:hover { background: #6a5dd0; }
+   .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+diff --git a/public/js/app.js b/public/js/app.js
+index 1b6aae9..709b61b 100644
+--- a/public/js/app.js
++++ b/public/js/app.js
+@@ -382,12 +382,16 @@ const ACTION_FIELDS = {
+   // --- googleBusinessProfile ---
+   listAccounts: [],
+   listLocations: [
+-    {name:'accountId', label:'Account ID', placeholder:'accounts/123456789'},
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
+     {name:'maxResults', label:'Max results', placeholder:'20', type:'number'},
+   ],
+-  getLocation: [{name:'locationId', label:'Location ID', placeholder:'locations/987654321'}],
++  getLocation: [
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
++  ],
+   getDailyMetrics: [
+-    {name:'locationId', label:'Location ID', placeholder:'locations/987654321'},
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+     {name:'metric', label:'Metric', type:'select', options:[
+       'BUSINESS_IMPRESSIONS_DESKTOP_MAPS','BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
+       'BUSINESS_IMPRESSIONS_MOBILE_MAPS','BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
+@@ -397,19 +401,35 @@ const ACTION_FIELDS = {
+     {name:'endDate', label:'End date', placeholder:'2026-07-12'},
+   ],
+   listReviews: [
+-    {name:'accountId', label:'Account ID', placeholder:'accounts/123456789'},
+-    {name:'locationId', label:'Location ID', placeholder:'locations/987654321'},
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
+   ],
+   replyToReview: [
+-    {name:'accountId', label:'Account ID'},
+-    {name:'locationId', label:'Location ID'},
+-    {name:'reviewId', label:'Review ID'},
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
++    {name:'reviewId', label:'Select Review', type:'resource', resourceType:'gbpReview', dependsOn:'accountId,locationId'},
+     {name:'comment', label:'Reply comment', textarea:true},
+   ],
+   deleteReviewReply: [
+-    {name:'accountId', label:'Account ID'},
+-    {name:'locationId', label:'Location ID'},
+-    {name:'reviewId', label:'Review ID'},
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
++    {name:'reviewId', label:'Select Review', type:'resource', resourceType:'gbpReview', dependsOn:'accountId,locationId'},
++  ],
++  listPosts: [
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
++  ],
++  createPost: [
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
++    {name:'summary', label:'Post text', textarea:true},
++    {name:'topicType', label:'Post type', type:'select', options:['STANDARD','EVENT','OFFER','ALERT']},
++    {name:'actionUrl', label:'Learn more URL (optional)'},
++  ],
++  deletePost: [
++    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
++    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
++    {name:'postId', label:'Select Post', type:'resource', resourceType:'gbpPost', dependsOn:'accountId,locationId'},
+   ],
+ };
+ 
+@@ -453,6 +473,172 @@ function buildInputFromFields(fields, idPrefix) {
+   return input;
+ }
+ 
++// --- Resource dropdowns for the "Run an action" panel ---
++// Mirrors the flow-builder canvas's resource-loading logic so every module
++// (sheets, calendar, drive, forms, Business Profile locations/reviews/
++// posts, etc.) can be picked from a dropdown here too, instead of pasting
++// IDs. Results are cached by resourceType + parent field values, so once
++// something has been fetched once (e.g. "List accounts"), picking an action
++// that needs that same ID later reuses the cached list instead of forcing
++// another manual fetch.
++const resourceCache = {}; // key: `${resourceType}|${depValuesJoined}` -> [{value,label}]
++
++function dependsOnNames(dependsOn) {
++  return (dependsOn || '').split(',').map(s => s.trim()).filter(Boolean);
++}
++
++function resourceCacheKey(resourceType, depNames, prefix) {
++  const depVals = depNames.map(dep => {
++    const el = document.getElementById(prefix + '_' + dep);
++    return el ? el.value : '';
++  });
++  return `${resourceType}|${depVals.join('|')}`;
++}
++
++function cacheResourceOutput(resourceType, depNames, prefix, options) {
++  resourceCache[resourceCacheKey(resourceType, depNames, prefix)] = options;
++}
++
++// Recognizes the shape of common list-action outputs and turns them into
++// {value,label} dropdown options - used to seed the cache from whatever the
++// person just fetched, not just from an explicit "Load options" click.
++function optionsFromActionOutput(output) {
++  if (!output) return null;
++  if (output.spreadsheets) return { resourceType: 'spreadsheet', options: output.spreadsheets.map(s => ({ value: s.id, label: s.name })) };
++  if (output.sheets) return { resourceType: 'sheet', options: output.sheets.map(s => ({ value: s.title, label: s.title })) };
++  if (output.calendars) return { resourceType: 'calendar', options: output.calendars.map(c => ({ value: c.id, label: c.name || c.summary })) };
++  if (output.files) return { resourceType: 'driveFile', options: output.files.map(f => ({ value: f.id, label: f.name })) };
++  if (output.folders) return { resourceType: 'driveFolder', options: output.folders.map(f => ({ value: f.id, label: f.name })) };
++  if (output.forms) return { resourceType: 'form', options: output.forms.map(f => ({ value: f.id, label: f.name })) };
++  if (output.accounts) return { resourceType: 'gbpAccount', options: output.accounts.map(a => ({ value: a.name, label: a.accountName || a.name })) };
++  if (output.locations) return { resourceType: 'gbpLocation', options: output.locations.map(l => ({ value: l.name, label: l.title || l.name })) };
++  if (output.reviews) return { resourceType: 'gbpReview', options: output.reviews.map(r => ({
++    value: r.reviewId || r.name, label: `${r.reviewer?.displayName || 'Anonymous'} - ${(r.comment || '').slice(0, 40)}`,
++  })) };
++  if (output.posts) return { resourceType: 'gbpPost', options: output.posts.map(p => ({
++    value: (p.name || '').split('/').pop() || p.name, label: (p.summary || p.name || '').slice(0, 50),
++  })) };
++  return null;
++}
++
++// The standard parent-field chain each resource type is fetched within -
++// used to key the cache consistently regardless of which action produced
++// the data (e.g. listLocations' output is keyed by the accountId it used,
++// so a later field needing gbpLocation for that same account finds it).
++const RESOURCE_DEPENDS = {
++  spreadsheet: [], sheet: ['spreadsheetId'], calendar: [], driveFile: [], driveFolder: [],
++  form: [], gbpAccount: [], gbpLocation: ['accountId'], gbpReview: ['accountId', 'locationId'], gbpPost: ['accountId', 'locationId'],
++};
++
++// Maps a dropdown's resourceType to the backend action that fetches it.
++function resourceFetchPlan(resourceType) {
++  switch (resourceType) {
++    case 'spreadsheet': return { action: 'listSpreadsheets' };
++    case 'sheet': return { action: 'listSheets' };
++    case 'calendar': return { action: 'getCalendars' };
++    case 'driveFile': return { action: 'getFiles' };
++    case 'driveFolder': return { action: 'getFolders' };
++    case 'form': return { action: 'listForms' };
++    case 'gbpAccount': return { action: 'listAccounts' };
++    case 'gbpLocation': return { action: 'listLocations' };
++    case 'gbpReview': return { action: 'listReviews' };
++    case 'gbpPost': return { action: 'listPosts' };
++    default: return null;
++  }
++}
++
++async function loadResourceOptions(prefix, resourceType, dependsOnStr, fieldName, moduleName) {
++  const selectEl = document.getElementById(prefix + '_' + fieldName);
++  if (!selectEl) return;
++  const connSel = document.getElementById(prefix === 'act' ? 'actionConnection' : (prefix + '_connectionId'));
++  const connectionId = connSel ? connSel.value : '';
++  if (!connectionId) { showMsg(document.getElementById('banner'), 'Choose a connected account before loading options.', 'error'); return; }
++
++  const depNames = dependsOnNames(dependsOnStr);
++  for (const dep of depNames) {
++    const depEl = document.getElementById(prefix + '_' + dep);
++    if (!depEl || !depEl.value) {
++      showMsg(document.getElementById('banner'), `Select ${dep} first.`, 'error');
++      return;
++    }
++  }
++  const plan = resourceFetchPlan(resourceType);
++  if (!plan) return;
++
++  const originalHtml = selectEl.innerHTML;
++  selectEl.innerHTML = '<option value="">Loading...</option>';
++  selectEl.disabled = true;
++  try {
++    const inputPayload = {};
++    depNames.forEach(dep => { inputPayload[dep] = document.getElementById(prefix + '_' + dep).value; });
++    const res = await fetch(`${API}/api/${moduleName}/${plan.action}`, {
++      method: 'POST', headers: headers(), body: JSON.stringify({ connectionId, input: inputPayload }),
++    });
++    const data = await res.json();
++    if (!res.ok) throw new Error(data.message || data.error || 'Failed to load options');
++
++    const parsed = optionsFromActionOutput(data.output) || { options: [] };
++    cacheResourceOutput(resourceType, depNames, prefix, parsed.options);
++    fillResourceSelect(selectEl, parsed.options);
++    if (parsed.options.length === 0) showMsg(document.getElementById('banner'), 'No results found for that dropdown.', 'error');
++  } catch (e) {
++    selectEl.innerHTML = originalHtml;
++    showMsg(document.getElementById('banner'), 'Error loading options: ' + e.message, 'error');
++  } finally {
++    selectEl.disabled = false;
++  }
++}
++
++function fillResourceSelect(selectEl, options) {
++  const currentVal = selectEl.value;
++  selectEl.innerHTML = '<option value="">Select...</option>' +
++    options.map(o => `<option value="${o.value}" ${o.value === currentVal ? 'selected' : ''}>${o.label}</option>`).join('');
++}
++
++// After rendering a set of resource fields, silently reuse anything already
++// cached (e.g. from a previous "Run an action" fetch) so the person doesn't
++// have to click "Load options" again for data already fetched.
++function prefillCachedResourceFields(fields, prefix) {
++  fields.filter(f => f.type === 'resource').forEach(f => {
++    const depNames = dependsOnNames(f.dependsOn);
++    const depsReady = depNames.every(dep => {
++      const el = document.getElementById(prefix + '_' + dep);
++      return el && el.value;
++    });
++    if (!depsReady) return;
++    const key = resourceCacheKey(f.resourceType, depNames, prefix);
++    const cached = resourceCache[key];
++    if (cached) {
++      const selectEl = document.getElementById(prefix + '_' + f.name);
++      if (selectEl) fillResourceSelect(selectEl, cached);
++    }
++  });
++}
++
++function wireResourceFieldDelegation(containerId, prefix, getModuleName) {
++  const container = document.getElementById(containerId);
++  if (!container || container.dataset.resourceWired) return;
++  container.dataset.resourceWired = '1';
++
++  container.addEventListener('click', (e) => {
++    const btn = e.target.closest('.load-resources-btn');
++    if (!btn) return;
++    const pfield = btn.closest('.field[data-resource-field]');
++    loadResourceOptions(prefix, btn.dataset.resourceType, pfield ? pfield.dataset.dependsOn : '', btn.dataset.resourceField, getModuleName());
++  });
++
++  container.addEventListener('change', (e) => {
++    const select = e.target.closest('select.resource-select');
++    if (!select) return;
++    const fieldName = select.id.slice(prefix.length + 1);
++    const moduleName = getModuleName();
++    const actionName = document.getElementById('actionName') ? document.getElementById('actionName').value : '';
++    const fields = ACTION_FIELDS[actionName] || [];
++    const dependents = fields.filter(f => dependsOnNames(f.dependsOn).includes(fieldName));
++    dependents.forEach(dep => loadResourceOptions(prefix, dep.resourceType, dep.dependsOn, dep.name, moduleName));
++  });
++}
++
+ function fieldsHtml(fields, prefix) {
+   return fields.map(f => `
+     <div class="field" ${f.type === 'resource' ? `data-resource-field="${f.name}" data-resource-type="${f.resourceType}" data-depends-on="${f.dependsOn || ''}"` : ''}>
+@@ -488,6 +674,7 @@ function renderActionFields() {
+   const fields = ACTION_FIELDS[actionName] || [];
+   document.getElementById('actionFormFields').innerHTML =
+     `<h3>${actionName} inputs</h3>` + (fields.length ? fieldsHtml(fields, 'act') : '<div class="empty">No inputs required.</div>');
++  prefillCachedResourceFields(fields, 'act');
+ }
+ 
+ async function runAction() {
+@@ -505,6 +692,15 @@ async function runAction() {
+     });
+     const data = await res.json();
+     outEl.innerHTML = `<div class="output-box">${JSON.stringify(data, null, 2)}</div>`;
++
++    // If this run's output looks like a list of resources (accounts,
++    // locations, reviews, posts, spreadsheets, sheets, calendars, files,
++    // forms...), cache it so the next action you pick can reuse it in its
++    // dropdown instead of you having to fetch it again.
++    const parsed = optionsFromActionOutput(data.output);
++    if (parsed) {
++      cacheResourceOutput(parsed.resourceType, RESOURCE_DEPENDS[parsed.resourceType] || [], 'act', parsed.options);
++    }
+   } catch (e) {
+     outEl.innerHTML = `<div class="msg error">${e.message}</div>`;
+   }
+@@ -529,6 +725,7 @@ function renderStepBuilder() {
+     const actions = mod ? mod.actions : [];
+     const conns = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
+     const fields = ACTION_FIELDS[s.action] || [];
++    const prefix = `step${i}`;
+     return `
+       <div class="step" data-step-index="${i}">
+         <div class="step-head"><span>STEP ${i+1}</span><button class="btn small danger" data-remove-step="${i}">remove</button></div>
+@@ -539,17 +736,15 @@ function renderStepBuilder() {
+           <option value="">choose action</option>
+           ${actions.map(a => `<option value="${a}" ${a===s.action?'selected':''}>${a}</option>`).join('')}
+         </select>
+-        <select data-step-field="connectionId" data-step-index="${i}">
++        <select id="${prefix}_connectionId" data-step-field="connectionId" data-step-index="${i}">
+           <option value="">choose connection</option>
+           ${conns.map(c => `<option value="${c.id}" ${c.id===s.connectionId?'selected':''}>${c.account_label}</option>`).join('')}
+         </select>
+-        ${fields.map(f => `
+-          <div class="field">
+-            <label>${f.label} ${i>0 ? '<span style="color:var(--text-dim)">(or reference a prior step output below)</span>' : ''}</label>
+-            <input data-step-index="${i}" data-step-input-field="${f.name}" placeholder="${f.placeholder||''}" />
+-          </div>`).join('')}
++        ${fields.length ? fieldsHtml(fields, prefix) : ''}
++        ${fields.length && i > 0 ? '<div class="hint" style="margin-top:4px;">Dropdowns fetch fresh each step - or reference a prior step\'s output directly below.</div>' : ''}
+       </div>`;
+   }).join('') || '<div class="empty">No steps yet.</div>';
++  stepDrafts.forEach((s, i) => prefillCachedResourceFields(ACTION_FIELDS[s.action] || [], `step${i}`));
+ }
+ 
+ // Event delegation for the step builder - content is fully replaced on
+@@ -559,7 +754,15 @@ function wireStepBuilderDelegation() {
+ 
+   el.addEventListener('click', (e) => {
+     const btn = e.target.closest('[data-remove-step]');
+-    if (btn) removeStep(Number(btn.dataset.removeStep));
++    if (btn) { removeStep(Number(btn.dataset.removeStep)); return; }
++
++    const loadBtn = e.target.closest('.load-resources-btn');
++    if (loadBtn) {
++      const stepEl = e.target.closest('[data-step-index]');
++      const i = Number(stepEl.dataset.stepIndex);
++      const pfield = loadBtn.closest('.field[data-resource-field]');
++      loadResourceOptions(`step${i}`, loadBtn.dataset.resourceType, pfield ? pfield.dataset.dependsOn : '', loadBtn.dataset.resourceField, stepDrafts[i].module);
++    }
+   });
+ 
+   el.addEventListener('change', (e) => {
+@@ -572,12 +775,31 @@ function wireStepBuilderDelegation() {
+       if (field === 'module' || field === 'action') renderStepBuilder();
+       return;
+     }
+-    const input = e.target.closest('input[data-step-input-field]');
+-    if (input) {
+-      const i = Number(input.dataset.stepIndex);
+-      stepDrafts[i].input[input.dataset.stepInputField] = input.value;
++
++    // Resource dropdowns and everything else fieldsHtml renders share the
++    // `step{i}_{fieldName}` id scheme - route by parsing that id.
++    const target = e.target.closest('[id^="step"]');
++    if (target && /^step(\d+)_(.+)$/.test(target.id)) {
++      const [, iStr, fieldName] = target.id.match(/^step(\d+)_(.+)$/);
++      const i = Number(iStr);
++      stepDrafts[i].input[fieldName] = target.type === 'checkbox' ? target.checked : target.value;
++
++      // Selecting a resource this step's other fields depend on reloads them.
++      if (target.classList.contains('resource-select')) {
++        const fields = ACTION_FIELDS[stepDrafts[i].action] || [];
++        const dependents = fields.filter(f => dependsOnNames(f.dependsOn).includes(fieldName));
++        dependents.forEach(dep => loadResourceOptions(`step${i}`, dep.resourceType, dep.dependsOn, dep.name, stepDrafts[i].module));
++      }
+     }
+   });
++
++  el.addEventListener('input', (e) => {
++    const target = e.target;
++    if (!target.id || target.tagName === 'SELECT') return;
++    const m = target.id.match(/^step(\d+)_(.+)$/);
++    if (!m) return;
++    stepDrafts[Number(m[1])].input[m[2]] = target.value;
++  });
+ }
+ 
+ async function saveFlow() {
+@@ -664,6 +886,7 @@ function init() {
+   document.getElementById('actionModule').addEventListener('change', renderActionForm);
+   document.getElementById('actionName').addEventListener('change', renderActionFields);
+   document.getElementById('runActionBtn').addEventListener('click', runAction);
++  wireResourceFieldDelegation('actionFormFields', 'act', () => document.getElementById('actionModule').value);
+ 
+   document.getElementById('addStepBtn').addEventListener('click', addStep);
+   document.getElementById('saveFlowBtn').addEventListener('click', saveFlow);
+diff --git a/public/js/flow-builder.js b/public/js/flow-builder.js
+index 5664f01..68f9a2a 100644
+--- a/public/js/flow-builder.js
++++ b/public/js/flow-builder.js
+@@ -598,6 +598,20 @@ function renderProps() {
+     if (f.type === 'checkbox') {
+       return `<div class="pfield"><label><input type="checkbox" data-prop-field="${f.name}" ${val ? 'checked' : ''} /> ${f.label}</label></div>`;
+     }
++    if (f.type === 'checkboxGroup') {
++      // Inclusive multi-select (e.g. sheets "Trigger on: added / updated") -
++      // pick one or both, stored as an array on node.config[f.name].
++      const current = Array.isArray(node.config[f.name]) ? node.config[f.name] : (f.default ? [...f.default] : []);
++      node.config[f.name] = current; // seed so it's included even if untouched
++      return `<div class="pfield" data-checkbox-group="${f.name}">
++        <label>${f.label}</label>
++        ${(f.options || []).map(o => `
++          <label style="display:flex; align-items:center; gap:6px; font-weight:400; margin-top:4px;">
++            <input type="checkbox" data-prop-field="${f.name}" data-checkbox-value="${o.value}" ${current.includes(o.value) ? 'checked' : ''} />
++            ${o.label}
++          </label>`).join('')}
++      </div>`;
++    }
+     return `<div class="pfield"><label>${f.label}</label><input type="${f.type === 'number' ? 'number' : 'text'}" data-prop-field="${f.name}" placeholder="${f.placeholder || ''}" value="${val}" /></div>`;
+   }).join('') || '<div class="props-empty">No inputs needed for this operation.</div>';
+ 
+@@ -645,12 +659,23 @@ function wirePropsDelegation() {
+     const typeDef = nodeTypeDef(node);
+     const f = (typeDef ? typeDef.fields : []).find(x => x.name === fieldEl.dataset.propField);
+     if (!f) return;
++
++    if (f.type === 'checkboxGroup') {
++      // Collect every checked box sharing this field name into an array -
++      // this is what makes "one or both" possible instead of a radio choice.
++      const boxes = panel.querySelectorAll(`[data-prop-field="${f.name}"][data-checkbox-value]`);
++      node.config[f.name] = Array.from(boxes).filter(b => b.checked).map(b => b.dataset.checkboxValue);
++      return;
++    }
++
+     const raw = f.type === 'checkbox' ? fieldEl.checked : fieldEl.value;
+-    node.config[f.name] = f.type === 'checkbox' ? raw : raw;
++    node.config[f.name] = raw;
+     
+     // If this is a resource field that other fields depend on, trigger reload of dependent fields
++    // (dependsOn can be a single field name or a comma-separated list, e.g. "accountId,locationId").
+     if (f.type === 'resource') {
+-      const dependentFields = (typeDef ? typeDef.fields : []).filter(field => field.dependsOn === f.name);
++      const dependsOnList = (fld) => (fld.dependsOn || '').split(',').map(s => s.trim()).filter(Boolean);
++      const dependentFields = (typeDef ? typeDef.fields : []).filter(field => dependsOnList(field).includes(f.name));
+       dependentFields.forEach(depField => {
+         const depPfield = panel.querySelector(`.pfield[data-resource-field="${depField.name}"]`);
+         if (depPfield) {
+@@ -685,9 +710,22 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
+   selectEl.innerHTML = '<option value="">Loading...</option>';
+   selectEl.disabled = true;
+   
++  // dependsOn can be a single field name or a comma-separated list (e.g.
++  // "accountId,locationId" for a review dropdown that needs both parents).
++  const depNames = (dependsOnField || '').split(',').map(s => s.trim()).filter(Boolean);
++  for (const dep of depNames) {
++    if (!node.config[dep]) {
++      showToast(`Please select ${dep} first`, 'error');
++      selectEl.innerHTML = originalText;
++      selectEl.disabled = false;
++      return;
++    }
++  }
++
+   try {
+     let actionName = '';
+     let inputPayload = {};
++    depNames.forEach(dep => { inputPayload[dep] = node.config[dep]; });
+     
+     // Map resource types to backend actions
+     switch (resourceType) {
+@@ -696,14 +734,6 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
+         break;
+       case 'sheet':
+         actionName = 'listSheets';
+-        if (dependsOnField && node.config[dependsOnField]) {
+-          inputPayload.spreadsheetId = node.config[dependsOnField];
+-        } else if (dependsOnField) {
+-          showToast(`Please select ${dependsOnField} first`, 'error');
+-          selectEl.innerHTML = originalText;
+-          selectEl.disabled = false;
+-          return;
+-        }
+         break;
+       case 'calendar':
+         actionName = 'getCalendars';
+@@ -717,6 +747,18 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
+       case 'form':
+         actionName = 'listForms';
+         break;
++      case 'gbpAccount':
++        actionName = 'listAccounts';
++        break;
++      case 'gbpLocation':
++        actionName = 'listLocations';
++        break;
++      case 'gbpReview':
++        actionName = 'listReviews';
++        break;
++      case 'gbpPost':
++        actionName = 'listPosts';
++        break;
+       default:
+         throw new Error(`Unknown resource type: ${resourceType}`);
+     }
+@@ -745,6 +787,20 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
+         options = data.output.files.map(f => ({ value: f.id, label: f.name }));
+       } else if (data.output.forms) {
+         options = data.output.forms.map(f => ({ value: f.id, label: f.name }));
++      } else if (data.output.accounts) {
++        options = data.output.accounts.map(a => ({ value: a.name, label: a.accountName || a.name }));
++      } else if (data.output.locations) {
++        options = data.output.locations.map(l => ({ value: l.name, label: l.title || l.name }));
++      } else if (data.output.reviews) {
++        options = data.output.reviews.map(r => ({
++          value: r.reviewId || r.name,
++          label: `${r.reviewer?.displayName || 'Anonymous'} - ${r.starRating || ''} ${(r.comment || '').slice(0, 40)}`,
++        }));
++      } else if (data.output.posts) {
++        options = data.output.posts.map(p => ({
++          value: (p.name || '').split('/').pop() || p.name,
++          label: (p.summary || p.name || '').slice(0, 50),
++        }));
+       }
+     }
+     
+diff --git a/public/js/nodeDefs.js b/public/js/nodeDefs.js
+index aa92734..3829cbd 100644
+--- a/public/js/nodeDefs.js
++++ b/public/js/nodeDefs.js
+@@ -41,13 +41,15 @@ const NODE_DEFS = {
+   sheets: {
+     label: 'Google Sheets', icon: '📊', color: '#0f9d58',
+     triggers: [
+-      { id: 'rowAdded', label: 'On row added', fields: [
+-        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+-        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
+-      ]},
+-      { id: 'rowUpdated', label: 'On row updated', fields: [
++      // Inclusive trigger: "Trigger on" lets you check Added, Updated, or
++      // both - no need to add two separate nodes for one sheet.
++      { id: 'rowChange', label: 'On row added / updated', fields: [
+         { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+         { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
++        { name: 'events', label: 'Trigger on', type: 'checkboxGroup', default: ['added', 'updated'], options: [
++          { value: 'added', label: 'Row added' },
++          { value: 'updated', label: 'Row updated' },
++        ]},
+       ]},
+     ],
+     actions: [
+@@ -218,18 +220,23 @@ const NODE_DEFS = {
+     label: 'Business Profile', icon: '🏬', color: '#34a853',
+     triggers: [
+       { id: 'reviewsSnapshot', label: 'On new review (snapshot poll)', fields: [
+-        { name: 'accountId', label: 'Account ID', placeholder: 'accounts/123456789' },
+-        { name: 'locationId', label: 'Location ID', placeholder: 'locations/987654321' },
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+       ]},
+     ],
+     actions: [
+       { id: 'listAccounts', label: 'List accounts', fields: [] },
+       { id: 'listLocations', label: 'List locations', fields: [
+-        { name: 'accountId', label: 'Account ID' }, { name: 'maxResults', label: 'Max results', type: 'number' },
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'maxResults', label: 'Max results', type: 'number' },
++      ]},
++      { id: 'getLocation', label: 'Get location', fields: [
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+       ]},
+-      { id: 'getLocation', label: 'Get location', fields: [{ name: 'locationId', label: 'Location ID' }] },
+       { id: 'getDailyMetrics', label: 'Get daily metrics', fields: [
+-        { name: 'locationId', label: 'Location ID' },
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+         { name: 'metric', label: 'Metric', type: 'select', options: [
+           'BUSINESS_IMPRESSIONS_DESKTOP_MAPS','BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
+           'BUSINESS_IMPRESSIONS_MOBILE_MAPS','BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
+@@ -239,15 +246,35 @@ const NODE_DEFS = {
+         { name: 'endDate', label: 'End date', placeholder: '2026-07-12' },
+       ]},
+       { id: 'listReviews', label: 'List reviews', fields: [
+-        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
+       ]},
+       { id: 'replyToReview', label: 'Reply to review', fields: [
+-        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
+-        { name: 'reviewId', label: 'Review ID' }, { name: 'comment', label: 'Reply comment', type: 'textarea' },
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
++        { name: 'reviewId', label: 'Select Review', type: 'resource', resourceType: 'gbpReview', dependsOn: 'accountId,locationId' },
++        { name: 'comment', label: 'Reply comment', type: 'textarea' },
+       ]},
+       { id: 'deleteReviewReply', label: 'Delete review reply', fields: [
+-        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
+-        { name: 'reviewId', label: 'Review ID' },
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
++        { name: 'reviewId', label: 'Select Review', type: 'resource', resourceType: 'gbpReview', dependsOn: 'accountId,locationId' },
++      ]},
++      { id: 'listPosts', label: 'List posts', fields: [
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
++      ]},
++      { id: 'createPost', label: 'Create post', fields: [
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
++        { name: 'summary', label: 'Post text', type: 'textarea' },
++        { name: 'topicType', label: 'Post type', type: 'select', options: ['STANDARD','EVENT','OFFER','ALERT'] },
++        { name: 'actionUrl', label: 'Learn more URL (optional)' },
++      ]},
++      { id: 'deletePost', label: 'Delete post', fields: [
++        { name: 'accountId', label: 'Select Account', type: 'resource', resourceType: 'gbpAccount' },
++        { name: 'locationId', label: 'Select Location', type: 'resource', resourceType: 'gbpLocation', dependsOn: 'accountId' },
++        { name: 'postId', label: 'Select Post', type: 'resource', resourceType: 'gbpPost', dependsOn: 'accountId,locationId' },
+       ]},
+     ],
+   },
+diff --git a/src/modules/googleBusinessProfile.js b/src/modules/googleBusinessProfile.js
+index 727b914..7d6517a 100644
+--- a/src/modules/googleBusinessProfile.js
++++ b/src/modules/googleBusinessProfile.js
+@@ -189,6 +189,68 @@ module.exports = {
+         return { success: true };
+       },
+     },
++
++    // --- Local Posts (legacy v4 REST - same surface as reviews) ---
++
++    listPosts: {
++      inputSchema: z.object({
++        accountId: z.string(), // e.g. "accounts/123456789"
++        locationId: z.string(), // e.g. "locations/987654321"
++      }),
++      outputSchema: z.object({ posts: z.array(z.any()) }),
++      handler: async ({ connection, input }) => {
++        const data = await mybusinessV4Request(connection, {
++          path: `/${input.accountId}/${input.locationId}/localPosts`,
++        });
++        return { posts: data.localPosts || [] };
++      },
++    },
++
++    createPost: {
++      inputSchema: z.object({
++        accountId: z.string(),
++        locationId: z.string(),
++        summary: z.string(),
++        // STANDARD is the plain update-style post; EVENT/OFFER/ALERT need
++        // extra fields the legacy v4 API supports but this starter doesn't
++        // expose yet - keep it simple and add those later if needed.
++        topicType: z.enum(['STANDARD', 'EVENT', 'OFFER', 'ALERT']).optional().default('STANDARD'),
++        actionUrl: z.string().optional(),
++      }),
++      outputSchema: z.object({ post: z.any() }),
++      handler: async ({ connection, input }) => {
++        const body = {
++          languageCode: 'en-US',
++          summary: input.summary,
++          topicType: input.topicType,
++        };
++        if (input.actionUrl) {
++          body.callToAction = { actionType: 'LEARN_MORE', url: input.actionUrl };
++        }
++        const data = await mybusinessV4Request(connection, {
++          method: 'POST',
++          path: `/${input.accountId}/${input.locationId}/localPosts`,
++          body,
++        });
++        return { post: data };
++      },
++    },
++
++    deletePost: {
++      inputSchema: z.object({
++        accountId: z.string(),
++        locationId: z.string(),
++        postId: z.string(), // the post's short name, e.g. "localPosts/abc123"
++      }),
++      outputSchema: z.object({ success: z.boolean() }),
++      handler: async ({ connection, input }) => {
++        await mybusinessV4Request(connection, {
++          method: 'DELETE',
++          path: `/${input.accountId}/${input.locationId}/localPosts/${input.postId}`,
++        });
++        return { success: true };
++      },
++    },
+   },
+ 
+   triggers: {
+diff --git a/src/modules/sheets.js b/src/modules/sheets.js
+index 18f6af0..a16642a 100644
+--- a/src/modules/sheets.js
++++ b/src/modules/sheets.js
+@@ -200,22 +200,33 @@ module.exports = {
+     },
+   },
+ 
+-  // Sheets has no native push mechanism for row-level changes, so these are
++  // Sheets has no native push mechanism for row-level changes, so this is
+   // meant to be fed by a small Apps Script bound trigger (onChange/onEdit)
+   // on the sheet, POSTing to /webhooks/generic/sheets with { secret, data }.
+   // There's no poll() here on purpose - see routes/webhooks.js, and the
+   // README's "not included yet" section for the receiving side (still a
+   // TODO there - payload validation/routing to flows isn't wired up yet).
+   triggers: {
+-    rowAdded: {
++    // Single inclusive trigger: `events` lets the user pick "added",
++    // "updated", or both (default both), instead of forcing a choice
++    // between two separate trigger types. The Apps Script side should send
++    // { data: { eventType: 'added'|'updated', sheetName, rowNumber, values } }
++    // and the (future) webhook dispatcher filters on `events` before firing
++    // the flow - see routes/webhooks.js.
++    rowChange: {
+       kind: 'webhook',
+       webhookSource: 'sheets',
+-      outputSchema: z.object({ sheetName: z.string(), rowNumber: z.number(), values: z.array(cellValue) }),
+-    },
+-    rowUpdated: {
+-      kind: 'webhook',
+-      webhookSource: 'sheets',
+-      outputSchema: z.object({ sheetName: z.string(), rowNumber: z.number(), values: z.array(cellValue) }),
++      inputSchema: z.object({
++        spreadsheetId: z.string(),
++        sheetName: z.string().optional(),
++        events: z.array(z.enum(['added', 'updated'])).min(1).optional().default(['added', 'updated']),
++      }),
++      outputSchema: z.object({
++        eventType: z.enum(['added', 'updated']),
++        sheetName: z.string(),
++        rowNumber: z.number(),
++        values: z.array(cellValue),
++      }),
+     },
+   },
+ };
+diff --git a/src/routes/webhooks.js b/src/routes/webhooks.js
+index cd225ff..3bddfec 100644
+--- a/src/routes/webhooks.js
++++ b/src/routes/webhooks.js
+@@ -68,6 +68,13 @@ router.post('/generic/:source', express.json(), (req, res) => {
+ 
+   // TODO: validate `secret` against a per-user webhook secret stored in
+   // sm_connections or a dedicated sm_webhook_secrets table once that's built.
++  //
++  // TODO (sheets): once this is wired up to actually find and run matching
++  // flows, the sheets `rowChange` trigger is inclusive - its trigger_config
++  // carries `events: ['added']`, `['updated']`, or both. Only fire a flow
++  // whose config.events includes `data.eventType` ('added'|'updated'), e.g.
++  //   const flowTriggerConfig = flow.trigger_config; // { module, trigger, config }
++  //   if (source === 'sheets' && !flowTriggerConfig.config.events.includes(data.eventType)) return;
+   logger.info({ source, data }, '[webhooks] generic event received');
+ 
+   res.status(200).json({ received: true });

@@ -200,22 +200,33 @@ module.exports = {
     },
   },
 
-  // Sheets has no native push mechanism for row-level changes, so these are
+  // Sheets has no native push mechanism for row-level changes, so this is
   // meant to be fed by a small Apps Script bound trigger (onChange/onEdit)
   // on the sheet, POSTing to /webhooks/generic/sheets with { secret, data }.
   // There's no poll() here on purpose - see routes/webhooks.js, and the
   // README's "not included yet" section for the receiving side (still a
   // TODO there - payload validation/routing to flows isn't wired up yet).
   triggers: {
-    rowAdded: {
+    // Single inclusive trigger: `events` lets the user pick "added",
+    // "updated", or both (default both), instead of forcing a choice
+    // between two separate trigger types. The Apps Script side should send
+    // { data: { eventType: 'added'|'updated', sheetName, rowNumber, values } }
+    // and the (future) webhook dispatcher filters on `events` before firing
+    // the flow - see routes/webhooks.js.
+    rowChange: {
       kind: 'webhook',
       webhookSource: 'sheets',
-      outputSchema: z.object({ sheetName: z.string(), rowNumber: z.number(), values: z.array(cellValue) }),
-    },
-    rowUpdated: {
-      kind: 'webhook',
-      webhookSource: 'sheets',
-      outputSchema: z.object({ sheetName: z.string(), rowNumber: z.number(), values: z.array(cellValue) }),
+      inputSchema: z.object({
+        spreadsheetId: z.string(),
+        sheetName: z.string().optional(),
+        events: z.array(z.enum(['added', 'updated'])).min(1).optional().default(['added', 'updated']),
+      }),
+      outputSchema: z.object({
+        eventType: z.enum(['added', 'updated']),
+        sheetName: z.string(),
+        rowNumber: z.number(),
+        values: z.array(cellValue),
+      }),
     },
   },
 };

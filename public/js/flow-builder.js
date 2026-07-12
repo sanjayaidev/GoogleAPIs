@@ -598,6 +598,20 @@ function renderProps() {
     if (f.type === 'checkbox') {
       return `<div class="pfield"><label><input type="checkbox" data-prop-field="${f.name}" ${val ? 'checked' : ''} /> ${f.label}</label></div>`;
     }
+    if (f.type === 'checkboxGroup') {
+      // Inclusive multi-select (e.g. sheets "Trigger on: added / updated") -
+      // pick one or both, stored as an array on node.config[f.name].
+      const current = Array.isArray(node.config[f.name]) ? node.config[f.name] : (f.default ? [...f.default] : []);
+      node.config[f.name] = current; // seed so it's included even if untouched
+      return `<div class="pfield" data-checkbox-group="${f.name}">
+        <label>${f.label}</label>
+        ${(f.options || []).map(o => `
+          <label style="display:flex; align-items:center; gap:6px; font-weight:400; margin-top:4px;">
+            <input type="checkbox" data-prop-field="${f.name}" data-checkbox-value="${o.value}" ${current.includes(o.value) ? 'checked' : ''} />
+            ${o.label}
+          </label>`).join('')}
+      </div>`;
+    }
     return `<div class="pfield"><label>${f.label}</label><input type="${f.type === 'number' ? 'number' : 'text'}" data-prop-field="${f.name}" placeholder="${f.placeholder || ''}" value="${val}" /></div>`;
   }).join('') || '<div class="props-empty">No inputs needed for this operation.</div>';
 
@@ -645,12 +659,23 @@ function wirePropsDelegation() {
     const typeDef = nodeTypeDef(node);
     const f = (typeDef ? typeDef.fields : []).find(x => x.name === fieldEl.dataset.propField);
     if (!f) return;
+
+    if (f.type === 'checkboxGroup') {
+      // Collect every checked box sharing this field name into an array -
+      // this is what makes "one or both" possible instead of a radio choice.
+      const boxes = panel.querySelectorAll(`[data-prop-field="${f.name}"][data-checkbox-value]`);
+      node.config[f.name] = Array.from(boxes).filter(b => b.checked).map(b => b.dataset.checkboxValue);
+      return;
+    }
+
     const raw = f.type === 'checkbox' ? fieldEl.checked : fieldEl.value;
-    node.config[f.name] = f.type === 'checkbox' ? raw : raw;
+    node.config[f.name] = raw;
     
     // If this is a resource field that other fields depend on, trigger reload of dependent fields
+    // (dependsOn can be a single field name or a comma-separated list, e.g. "accountId,locationId").
     if (f.type === 'resource') {
-      const dependentFields = (typeDef ? typeDef.fields : []).filter(field => field.dependsOn === f.name);
+      const dependsOnList = (fld) => (fld.dependsOn || '').split(',').map(s => s.trim()).filter(Boolean);
+      const dependentFields = (typeDef ? typeDef.fields : []).filter(field => dependsOnList(field).includes(f.name));
       dependentFields.forEach(depField => {
         const depPfield = panel.querySelector(`.pfield[data-resource-field="${depField.name}"]`);
         if (depPfield) {
@@ -685,9 +710,22 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
   selectEl.innerHTML = '<option value="">Loading...</option>';
   selectEl.disabled = true;
   
+  // dependsOn can be a single field name or a comma-separated list (e.g.
+  // "accountId,locationId" for a review dropdown that needs both parents).
+  const depNames = (dependsOnField || '').split(',').map(s => s.trim()).filter(Boolean);
+  for (const dep of depNames) {
+    if (!node.config[dep]) {
+      showToast(`Please select ${dep} first`, 'error');
+      selectEl.innerHTML = originalText;
+      selectEl.disabled = false;
+      return;
+    }
+  }
+
   try {
     let actionName = '';
     let inputPayload = {};
+    depNames.forEach(dep => { inputPayload[dep] = node.config[dep]; });
     
     // Map resource types to backend actions
     switch (resourceType) {
@@ -696,14 +734,6 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
         break;
       case 'sheet':
         actionName = 'listSheets';
-        if (dependsOnField && node.config[dependsOnField]) {
-          inputPayload.spreadsheetId = node.config[dependsOnField];
-        } else if (dependsOnField) {
-          showToast(`Please select ${dependsOnField} first`, 'error');
-          selectEl.innerHTML = originalText;
-          selectEl.disabled = false;
-          return;
-        }
         break;
       case 'calendar':
         actionName = 'getCalendars';
@@ -716,6 +746,18 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
         break;
       case 'form':
         actionName = 'listForms';
+        break;
+      case 'gbpAccount':
+        actionName = 'listAccounts';
+        break;
+      case 'gbpLocation':
+        actionName = 'listLocations';
+        break;
+      case 'gbpReview':
+        actionName = 'listReviews';
+        break;
+      case 'gbpPost':
+        actionName = 'listPosts';
         break;
       default:
         throw new Error(`Unknown resource type: ${resourceType}`);
@@ -745,6 +787,20 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
         options = data.output.files.map(f => ({ value: f.id, label: f.name }));
       } else if (data.output.forms) {
         options = data.output.forms.map(f => ({ value: f.id, label: f.name }));
+      } else if (data.output.accounts) {
+        options = data.output.accounts.map(a => ({ value: a.name, label: a.accountName || a.name }));
+      } else if (data.output.locations) {
+        options = data.output.locations.map(l => ({ value: l.name, label: l.title || l.name }));
+      } else if (data.output.reviews) {
+        options = data.output.reviews.map(r => ({
+          value: r.reviewId || r.name,
+          label: `${r.reviewer?.displayName || 'Anonymous'} - ${r.starRating || ''} ${(r.comment || '').slice(0, 40)}`,
+        }));
+      } else if (data.output.posts) {
+        options = data.output.posts.map(p => ({
+          value: (p.name || '').split('/').pop() || p.name,
+          label: (p.summary || p.name || '').slice(0, 50),
+        }));
       }
     }
     

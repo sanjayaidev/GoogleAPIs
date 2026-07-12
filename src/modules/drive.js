@@ -46,6 +46,43 @@ module.exports = {
       },
     },
 
+    // Resource loaders for dropdowns - returns formatted options for files and folders
+    getFiles: {
+      inputSchema: z.object({
+        mimeType: z.string().optional(),
+        maxResults: z.number().int().min(1).max(100).optional().default(50),
+      }),
+      outputSchema: z.object({ options: z.array(z.object({ value: z.string(), label: z.string() })) }),
+      handler: async ({ connection, input }) => {
+        const drive = driveClient(connection);
+        let q = input.mimeType ? `mimeType='${input.mimeType}'` : '';
+        const res = await drive.files.list({
+          q: q || undefined,
+          pageSize: input.maxResults,
+          fields: 'files(id, name, mimeType)',
+        });
+        const options = (res.data.files || []).map(f => ({ value: f.id, label: f.name }));
+        return { options };
+      },
+    },
+
+    getFolders: {
+      inputSchema: z.object({
+        maxResults: z.number().int().min(1).max(100).optional().default(50),
+      }),
+      outputSchema: z.object({ options: z.array(z.object({ value: z.string(), label: z.string() })) }),
+      handler: async ({ connection, input }) => {
+        const drive = driveClient(connection);
+        const res = await drive.files.list({
+          q: "mimeType='application/vnd.google-apps.folder'",
+          pageSize: input.maxResults,
+          fields: 'files(id, name)',
+        });
+        const options = (res.data.files || []).map(f => ({ value: f.id, label: f.name }));
+        return { options };
+      },
+    },
+
     getFile: {
       inputSchema: z.object({ fileId: z.string() }),
       outputSchema: z.object({ file: z.any() }),

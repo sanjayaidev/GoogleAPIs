@@ -27,9 +27,11 @@ const eventTimeSchema = z.object({
 
 module.exports = {
   provider: 'google',
+  // calendar scopes + drive.readonly for listing calendars (if needed)
   requiredScopes: [
     'https://www.googleapis.com/auth/calendar.events',
     'https://www.googleapis.com/auth/calendar.readonly',
+    'https://www.googleapis.com/auth/drive.readonly',
   ],
 
   actions: {
@@ -39,7 +41,19 @@ module.exports = {
       handler: async ({ connection }) => {
         const calendar = calendarClient(connection);
         const res = await calendar.calendarList.list();
-        return { calendars: res.data.items || [] };
+        return { calendars: (res.data.items || []).map(c => ({ id: c.id, name: c.summary, accessRole: c.accessRole })) };
+      },
+    },
+
+    // Resource loader for calendar dropdown - returns same data but named for UI consistency
+    getCalendars: {
+      inputSchema: z.object({}),
+      outputSchema: z.object({ options: z.array(z.object({ value: z.string(), label: z.string() })) }),
+      handler: async ({ connection }) => {
+        const calendar = calendarClient(connection);
+        const res = await calendar.calendarList.list();
+        const options = (res.data.items || []).map(c => ({ value: c.id, label: c.summary }));
+        return { options };
       },
     },
 

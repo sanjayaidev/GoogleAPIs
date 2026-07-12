@@ -576,9 +576,19 @@ function renderProps() {
   const fields = typeDef ? typeDef.fields : [];
   const fieldsHtml = fields.map(f => {
     const val = node.config[f.name] ?? '';
+    if (f.type === 'resource') {
+      const placeholder = f.placeholder || `Select ${f.label}`;
+      return `<div class="pfield" data-resource-field="${f.name}" data-resource-type="${f.resourceType}" data-depends-on="${f.dependsOn || ''}">
+        <label>${f.label}</label>
+        <select data-prop-field="${f.name}" class="resource-select">
+          <option value="">${placeholder}</option>
+        </select>
+        <button type="button" class="tbtn load-resources-btn" style="font-size:11px; padding:4px 8px; margin-top:6px;">↻ Load options</button>
+      </div>`;
+    }
     if (f.type === 'select') {
       return `<div class="pfield"><label>${f.label}</label><select data-prop-field="${f.name}">
-        <option value="">Select Spreadsheet</option>
+        <option value="">${f.placeholder || 'Select...'}</option>
         ${(f.options || []).map(o => `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`).join('')}
       </select></div>`;
     }
@@ -606,6 +616,19 @@ function wirePropsDelegation() {
     if (connectBtn) { connectModule(connectBtn.dataset.connectModule); return; }
     const disconnectBtn = e.target.closest('[data-disconnect-conn]');
     if (disconnectBtn) { disconnectConnection(disconnectBtn.dataset.disconnectConn); return; }
+    
+    // Handle "Load options" button for resource fields
+    const loadBtn = e.target.closest('.load-resources-btn');
+    if (loadBtn) {
+      const pfield = loadBtn.closest('.pfield');
+      const select = pfield.querySelector('.resource-select');
+      const resourceType = pfield.dataset.resourceType;
+      const dependsOn = pfield.dataset.dependsOn;
+      const fieldName = pfield.dataset.resourceField;
+      
+      loadResources(select, resourceType, dependsOn, fieldName);
+      return;
+    }
   });
   panel.addEventListener('change', (e) => {
     const node = canvasNodes.find(n => n.id === selectedNodeId);
@@ -624,6 +647,18 @@ function wirePropsDelegation() {
     if (!f) return;
     const raw = f.type === 'checkbox' ? fieldEl.checked : fieldEl.value;
     node.config[f.name] = f.type === 'checkbox' ? raw : raw;
+    
+    // If this is a resource field that other fields depend on, trigger reload of dependent fields
+    if (f.type === 'resource') {
+      const dependentFields = (typeDef ? typeDef.fields : []).filter(field => field.dependsOn === f.name);
+      dependentFields.forEach(depField => {
+        const depPfield = panel.querySelector(`.pfield[data-resource-field="${depField.name}"]`);
+        if (depPfield) {
+          const depSelect = depPfield.querySelector('.resource-select');
+          loadResources(depSelect, depField.resourceType, depField.dependsOn, depField.name);
+        }
+      });
+    }
   });
   // live-update text/textarea as you type, not just on blur/change
   panel.addEventListener('input', (e) => {
@@ -636,6 +671,96 @@ function wirePropsDelegation() {
     if (!f) return;
     node.config[f.name] = fieldEl.type === 'checkbox' ? fieldEl.checked : fieldEl.value;
   });
+}
+
+// Load resources from API for dropdown population
+async function loadResources(selectEl, resourceType, dependsOnField, currentFieldName) {
+  const node = canvasNodes.find(n => n.id === selectedNodeId);
+  if (!node || !node.connectionId) {
+    showToast('Please select an account first', 'error');
+    return;
+  }
+  
+  const originalText = selectEl.innerHTML;
+  selectEl.innerHTML = '<option value="">Loading...</option>';
+  selectEl.disabled = true;
+  
+  try {
+    let actionName = '';
+    let inputPayload = {};
+    
+    // Map resource types to backend actions
+    switch (resourceType) {
+      case 'spreadsheet':
+        actionName = 'listSpreadsheets';
+        break;
+      case 'sheet':
+        actionName = 'listSheets';
+        if (dependsOnField && node.config[dependsOnField]) {
+          inputPayload.spreadsheetId = node.config[dependsOnField];
+        } else if (dependsOnField) {
+          showToast(`Please select ${dependsOnField} first`, 'error');
+          selectEl.innerHTML = originalText;
+          selectEl.disabled = false;
+          return;
+        }
+        break;
+      case 'calendar':
+        actionName = 'getCalendars';
+        break;
+      case 'driveFile':
+        actionName = 'getFiles';
+        break;
+      case 'driveFolder':
+        actionName = 'getFolders';
+        break;
+      case 'form':
+        actionName = 'listForms';
+        break;
+      default:
+        throw new Error(`Unknown resource type: ${resourceType}`);
+    }
+    
+    const res = await fetch(`${API}/api/${node.module}/${actionName}`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ connectionId: node.connectionId, input: inputPayload }),
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.error || 'Failed to load resources');
+    
+    let options = [];
+    if (data.output) {
+      // Handle different response formats
+      if (data.output.spreadsheets) {
+        options = data.output.spreadsheets.map(s => ({ value: s.id, label: s.name }));
+      } else if (data.output.sheets) {
+        options = data.output.sheets.map(s => ({ value: s.title, label: s.title }));
+      } else if (data.output.options) {
+        options = data.output.options;
+      } else if (data.output.calendars) {
+        options = data.output.calendars.map(c => ({ value: c.id, label: c.name || c.summary }));
+      } else if (data.output.files) {
+        options = data.output.files.map(f => ({ value: f.id, label: f.name }));
+      } else if (data.output.forms) {
+        options = data.output.forms.map(f => ({ value: f.id, label: f.name }));
+      }
+    }
+    
+    const currentVal = node.config[currentFieldName] || '';
+    selectEl.innerHTML = '<option value="">Select...</option>' + 
+      options.map(o => `<option value="${o.value}" ${o.value === currentVal ? 'selected' : ''}>${o.label}</option>`).join('');
+    
+    if (options.length === 0) {
+      showToast('No resources found', 'error');
+    }
+  } catch (err) {
+    showToast('Error loading resources: ' + err.message, 'error');
+    selectEl.innerHTML = originalText;
+  } finally {
+    selectEl.disabled = false;
+  }
 }
 
 // ---------- quick-add node search (Tab) ----------

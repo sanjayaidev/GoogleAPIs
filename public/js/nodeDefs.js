@@ -1,0 +1,234 @@
+// Node metadata for the canvas flow builder. One entry per backend module
+// (src/modules/<name>.js). This mirrors each module's real inputSchema/
+// triggers so what you build here maps 1:1 onto POST /flows steps -
+// nothing here is decorative-only.
+//
+// field shape: { name, label, placeholder, type: 'text'|'number'|'select'|'checkbox'|'textarea',
+//                options: [...] (for select), path: 'dot.path' (nested input), parse: 'csv'|'json' }
+
+const NODE_DEFS = {
+  gmail: {
+    label: 'Gmail', icon: '✉️', color: '#ea4335',
+    triggers: [
+      { id: 'newMail', label: 'On new email', fields: [] },
+    ],
+    actions: [
+      { id: 'loadMails', label: 'Search / load emails', fields: [
+        { name: 'query', label: 'Search query', placeholder: 'is:unread' },
+        { name: 'maxResults', label: 'Max results', placeholder: '10', type: 'number' },
+      ]},
+      { id: 'sendMail', label: 'Send email', fields: [
+        { name: 'to', label: 'To' }, { name: 'subject', label: 'Subject' },
+        { name: 'body', label: 'Body', type: 'textarea' },
+      ]},
+      { id: 'createDraft', label: 'Create draft', fields: [
+        { name: 'to', label: 'To' }, { name: 'subject', label: 'Subject' },
+        { name: 'body', label: 'Body', type: 'textarea' },
+      ]},
+      { id: 'reply', label: 'Reply to thread', fields: [
+        { name: 'threadId', label: 'Thread ID' }, { name: 'to', label: 'To' },
+        { name: 'subject', label: 'Subject' }, { name: 'body', label: 'Body', type: 'textarea' },
+      ]},
+      { id: 'markAsRead', label: 'Mark as read', fields: [
+        { name: 'messageId', label: 'Message ID' },
+      ]},
+      { id: 'addLabel', label: 'Add label', fields: [
+        { name: 'messageId', label: 'Message ID' }, { name: 'labelId', label: 'Label ID' },
+      ]},
+    ],
+  },
+
+  sheets: {
+    label: 'Google Sheets', icon: '📊', color: '#0f9d58',
+    triggers: [
+      { id: 'rowAdded', label: 'On row added', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', placeholder: 'Spreadsheet ID or URL' },
+        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+      ]},
+      { id: 'rowUpdated', label: 'On row updated', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', placeholder: 'Spreadsheet ID or URL' },
+        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+      ]},
+    ],
+    actions: [
+      { id: 'appendRow', label: 'Add a row', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'range', label: 'Range (sheet!cell)', placeholder: 'Sheet1!A1' },
+        { name: 'values', label: 'Row values (comma separated)', placeholder: 'a, b, c', parse: 'csv' },
+      ]},
+      { id: 'deleteRow', label: 'Delete a row', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+        { name: 'rowNumber', label: 'Row number', type: 'number' },
+      ]},
+      { id: 'updateRange', label: 'Update a row/range', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'range', label: 'Range', placeholder: 'Sheet1!A2:C2' },
+        { name: 'values', label: 'Values (JSON array of rows)', type: 'textarea', placeholder: '[["a","b","c"]]', parse: 'json' },
+      ]},
+      { id: 'getRow', label: 'Get row', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+        { name: 'rowNumber', label: 'Row number', type: 'number' },
+      ]},
+      { id: 'readRange', label: 'Get many rows (range)', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'range', label: 'Range', placeholder: 'Sheet1!A1:D20' },
+      ]},
+      { id: 'clearRange', label: 'Clear a range', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'range', label: 'Range' },
+      ]},
+      { id: 'createSpreadsheet', label: 'Create spreadsheet', fields: [
+        { name: 'title', label: 'Title' },
+        { name: 'sheetTitle', label: 'First sheet title', placeholder: 'Sheet1' },
+      ]},
+    ],
+  },
+
+  forms: {
+    label: 'Google Forms', icon: '📝', color: '#673ab7',
+    triggers: [
+      { id: 'newResponse', label: 'On new response', fields: [
+        { name: 'formId', label: 'Form ID' },
+      ]},
+    ],
+    actions: [
+      { id: 'createForm', label: 'Create form', fields: [
+        { name: 'title', label: 'Title' }, { name: 'description', label: 'Description', type: 'textarea' },
+      ]},
+      { id: 'getForm', label: 'Get form', fields: [{ name: 'formId', label: 'Form ID' }] },
+      { id: 'addQuestion', label: 'Add question', fields: [
+        { name: 'formId', label: 'Form ID' },
+        { name: 'title', label: 'Question title' },
+        { name: 'type', label: 'Question type', type: 'select', options: ['TEXT','PARAGRAPH_TEXT','MULTIPLE_CHOICE','CHECKBOX','DROPDOWN'] },
+        { name: 'options', label: 'Choices (comma separated)', parse: 'csv' },
+        { name: 'required', label: 'Required', type: 'checkbox' },
+        { name: 'index', label: 'Insert position', type: 'number', placeholder: '0' },
+      ]},
+      { id: 'listResponses', label: 'List responses', fields: [{ name: 'formId', label: 'Form ID' }] },
+    ],
+  },
+
+  drive: {
+    label: 'Google Drive', icon: '📁', color: '#4285f4',
+    triggers: [
+      { id: 'changedFile', label: 'On file created/changed', fields: [] },
+    ],
+    actions: [
+      { id: 'listFiles', label: 'List/search files', fields: [
+        { name: 'query', label: 'Query', placeholder: "name contains 'report'" },
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '20' },
+      ]},
+      { id: 'getFile', label: 'Get file', fields: [{ name: 'fileId', label: 'File ID' }] },
+      { id: 'uploadFile', label: 'Upload file', fields: [
+        { name: 'name', label: 'File name' }, { name: 'mimeType', label: 'MIME type', placeholder: 'text/plain' },
+        { name: 'content', label: 'Content', type: 'textarea' }, { name: 'parentFolderId', label: 'Parent folder ID' },
+      ]},
+      { id: 'createFolder', label: 'Create folder', fields: [
+        { name: 'name', label: 'Folder name' }, { name: 'parentFolderId', label: 'Parent folder ID' },
+      ]},
+      { id: 'deleteFile', label: 'Delete file', fields: [{ name: 'fileId', label: 'File ID' }] },
+      { id: 'shareFile', label: 'Share file', fields: [
+        { name: 'fileId', label: 'File ID' }, { name: 'email', label: 'Share with (email)' },
+        { name: 'role', label: 'Role', type: 'select', options: ['reader','commenter','writer'] },
+      ]},
+    ],
+  },
+
+  calendar: {
+    label: 'Google Calendar', icon: '📅', color: '#1a73e8',
+    triggers: [
+      { id: 'updatedEvent', label: 'On event created/updated', fields: [] },
+    ],
+    actions: [
+      { id: 'listCalendars', label: 'List calendars', fields: [] },
+      { id: 'listEvents', label: 'List events', fields: [
+        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' },
+        { name: 'timeMin', label: 'Time min (RFC3339)' }, { name: 'timeMax', label: 'Time max (RFC3339)' },
+        { name: 'maxResults', label: 'Max results', type: 'number' }, { name: 'query', label: 'Search query' },
+      ]},
+      { id: 'createEvent', label: 'Create event', fields: [
+        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' },
+        { name: 'summary', label: 'Summary' }, { name: 'description', label: 'Description', type: 'textarea' },
+        { name: 'location', label: 'Location' },
+        { name: 'startDateTime', label: 'Start date/time', path: 'start.dateTime' },
+        { name: 'endDateTime', label: 'End date/time', path: 'end.dateTime' },
+        { name: 'attendees', label: 'Attendee emails (comma separated)', parse: 'csv' },
+      ]},
+      { id: 'updateEvent', label: 'Update event', fields: [
+        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' }, { name: 'eventId', label: 'Event ID' },
+        { name: 'summary', label: 'Summary' },
+        { name: 'startDateTime', label: 'Start date/time', path: 'start.dateTime' },
+        { name: 'endDateTime', label: 'End date/time', path: 'end.dateTime' },
+      ]},
+      { id: 'deleteEvent', label: 'Delete event', fields: [
+        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' }, { name: 'eventId', label: 'Event ID' },
+      ]},
+    ],
+  },
+
+  docs: {
+    label: 'Google Docs', icon: '📄', color: '#4285f4',
+    triggers: [
+      { id: 'documentChanged', label: 'On document changed', fields: [
+        { name: 'documentId', label: 'Document ID' },
+      ]},
+    ],
+    actions: [
+      { id: 'createDocument', label: 'Create document', fields: [
+        { name: 'title', label: 'Title' }, { name: 'body', label: 'Body text', type: 'textarea' },
+      ]},
+      { id: 'getDocument', label: 'Get document', fields: [{ name: 'documentId', label: 'Document ID' }] },
+      { id: 'appendText', label: 'Append text', fields: [
+        { name: 'documentId', label: 'Document ID' }, { name: 'text', label: 'Text', type: 'textarea' },
+      ]},
+      { id: 'replaceAllText', label: 'Find & replace text', fields: [
+        { name: 'documentId', label: 'Document ID' }, { name: 'findText', label: 'Find text' },
+        { name: 'replaceText', label: 'Replace text' }, { name: 'matchCase', label: 'Match case', type: 'checkbox' },
+      ]},
+    ],
+  },
+
+  googleBusinessProfile: {
+    label: 'Business Profile', icon: '🏬', color: '#34a853',
+    triggers: [
+      { id: 'reviewsSnapshot', label: 'On new review (snapshot poll)', fields: [
+        { name: 'accountId', label: 'Account ID', placeholder: 'accounts/123456789' },
+        { name: 'locationId', label: 'Location ID', placeholder: 'locations/987654321' },
+      ]},
+    ],
+    actions: [
+      { id: 'listAccounts', label: 'List accounts', fields: [] },
+      { id: 'listLocations', label: 'List locations', fields: [
+        { name: 'accountId', label: 'Account ID' }, { name: 'maxResults', label: 'Max results', type: 'number' },
+      ]},
+      { id: 'getLocation', label: 'Get location', fields: [{ name: 'locationId', label: 'Location ID' }] },
+      { id: 'getDailyMetrics', label: 'Get daily metrics', fields: [
+        { name: 'locationId', label: 'Location ID' },
+        { name: 'metric', label: 'Metric', type: 'select', options: [
+          'BUSINESS_IMPRESSIONS_DESKTOP_MAPS','BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
+          'BUSINESS_IMPRESSIONS_MOBILE_MAPS','BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
+          'CALL_CLICKS','WEBSITE_CLICKS','BUSINESS_DIRECTION_REQUESTS',
+        ]},
+        { name: 'startDate', label: 'Start date', placeholder: '2026-07-01' },
+        { name: 'endDate', label: 'End date', placeholder: '2026-07-12' },
+      ]},
+      { id: 'listReviews', label: 'List reviews', fields: [
+        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
+      ]},
+      { id: 'replyToReview', label: 'Reply to review', fields: [
+        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
+        { name: 'reviewId', label: 'Review ID' }, { name: 'comment', label: 'Reply comment', type: 'textarea' },
+      ]},
+      { id: 'deleteReviewReply', label: 'Delete review reply', fields: [
+        { name: 'accountId', label: 'Account ID' }, { name: 'locationId', label: 'Location ID' },
+        { name: 'reviewId', label: 'Review ID' },
+      ]},
+    ],
+  },
+};
+
+// module registry key -> display metadata above (drive/calendar/docs share
+// icon color visually but are distinct backend modules).
+const MODULE_ORDER = ['gmail', 'sheets', 'forms', 'drive', 'calendar', 'docs', 'googleBusinessProfile'];

@@ -30,10 +30,17 @@ function extractText(doc) {
   return text;
 }
 
+function driveClient(connection) {
+  return google.drive({ version: 'v3', auth: getOAuthClient(connection) });
+}
+
 module.exports = {
   provider: 'google',
   requiredScopes: [
     'https://www.googleapis.com/auth/documents',
+    // Read-only, just enough to poll modifiedTime for the documentChanged
+    // trigger below - does not grant access to file contents.
+    'https://www.googleapis.com/auth/drive.metadata.readonly',
   ],
 
   actions: {
@@ -122,5 +129,18 @@ module.exports = {
     },
   },
 
-  triggers: {},
+  triggers: {
+    // Polling-based: the Docs API has no "list revisions" endpoint, so this
+    // just watches the file's modifiedTime via Drive metadata.
+    documentChanged: {
+      outputSchema: z.object({ changed: z.boolean(), modifiedTime: z.string().optional() }),
+      poll: async ({ connection, input, lastCheckedAt }) => {
+        const drive = driveClient(connection);
+        const res = await drive.files.get({ fileId: input.documentId, fields: 'modifiedTime' });
+        const modifiedTime = res.data.modifiedTime;
+        const changed = modifiedTime ? new Date(modifiedTime) > new Date(lastCheckedAt) : false;
+        return { changed, modifiedTime };
+      },
+    },
+  },
 };

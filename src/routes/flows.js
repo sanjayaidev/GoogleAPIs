@@ -23,17 +23,17 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// POST /flows { name, triggerType, steps: [{ module, action, connectionId, inputMap, condition }] }
+// POST /flows { name, triggerType, triggerConfig, steps: [{ module, action, connectionId, inputMap, condition }] }
 router.post('/', express.json(), async (req, res, next) => {
   try {
-    const { name, triggerType = 'manual', steps = [] } = req.body || {};
+    const { name, triggerType = 'manual', triggerConfig = {}, steps = [] } = req.body || {};
     if (!name || !Array.isArray(steps) || steps.length === 0) {
       return res.status(400).json({ error: 'invalid_input', message: 'name and at least one step required' });
     }
 
     const { data: flow, error: flowError } = await supabase
       .from(TABLES.FLOWS)
-      .insert({ user_id: req.user.id, name, trigger_type: triggerType })
+      .insert({ user_id: req.user.id, name, trigger_type: triggerType, trigger_config: triggerConfig })
       .select()
       .single();
     if (flowError) throw flowError;

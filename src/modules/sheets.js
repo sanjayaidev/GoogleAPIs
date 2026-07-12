@@ -114,7 +114,72 @@ module.exports = {
         return { success: true };
       },
     },
+
+    getRow: {
+      inputSchema: z.object({
+        spreadsheetId: z.string(),
+        sheetName: z.string().optional().default('Sheet1'),
+        rowNumber: z.number().int().min(1),
+      }),
+      outputSchema: z.object({ values: z.array(cellValue) }),
+      handler: async ({ connection, input }) => {
+        const sheets = sheetsClient(connection);
+        const range = `${input.sheetName}!${input.rowNumber}:${input.rowNumber}`;
+        const res = await sheets.spreadsheets.values.get({ spreadsheetId: input.spreadsheetId, range });
+        return { values: (res.data.values || [])[0] || [] };
+      },
+    },
+
+    deleteRow: {
+      inputSchema: z.object({
+        spreadsheetId: z.string(),
+        sheetName: z.string().optional().default('Sheet1'),
+        rowNumber: z.number().int().min(1),
+      }),
+      outputSchema: z.object({ success: z.boolean() }),
+      handler: async ({ connection, input }) => {
+        const sheets = sheetsClient(connection);
+        // deleteDimension needs the sheet's numeric grid id, not its title,
+        // so look it up from the spreadsheet's metadata first.
+        const meta = await sheets.spreadsheets.get({ spreadsheetId: input.spreadsheetId });
+        const sheet = (meta.data.sheets || []).find(s => s.properties?.title === input.sheetName);
+        if (!sheet) throw new Error(`Sheet "${input.sheetName}" not found`);
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: input.spreadsheetId,
+          requestBody: {
+            requests: [{
+              deleteDimension: {
+                range: {
+                  sheetId: sheet.properties.sheetId,
+                  dimension: 'ROWS',
+                  startIndex: input.rowNumber - 1,
+                  endIndex: input.rowNumber,
+                },
+              },
+            }],
+          },
+        });
+        return { success: true };
+      },
+    },
   },
 
-  triggers: {},
+  // Sheets has no native push mechanism for row-level changes, so these are
+  // meant to be fed by a small Apps Script bound trigger (onChange/onEdit)
+  // on the sheet, POSTing to /webhooks/generic/sheets with { secret, data }.
+  // There's no poll() here on purpose - see routes/webhooks.js, and the
+  // README's "not included yet" section for the receiving side (still a
+  // TODO there - payload validation/routing to flows isn't wired up yet).
+  triggers: {
+    rowAdded: {
+      kind: 'webhook',
+      webhookSource: 'sheets',
+      outputSchema: z.object({ sheetName: z.string(), rowNumber: z.number(), values: z.array(cellValue) }),
+    },
+    rowUpdated: {
+      kind: 'webhook',
+      webhookSource: 'sheets',
+      outputSchema: z.object({ sheetName: z.string(), rowNumber: z.number(), values: z.array(cellValue) }),
+    },
+  },
 };

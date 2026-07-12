@@ -26,6 +26,39 @@ module.exports = {
   ],
 
   actions: {
+    listSpreadsheets: {
+      inputSchema: z.object({
+        query: z.string().optional(),
+        maxResults: z.number().int().min(1).max(100).optional().default(50),
+      }),
+      outputSchema: z.object({ spreadsheets: z.array(z.any()) }),
+      handler: async ({ connection, input }) => {
+        const drive = google.drive({ version: 'v3', auth: getOAuthClient(connection) });
+        const res = await drive.files.list({
+          q: input.query ? `${input.query} and mimeType='application/vnd.google-apps.spreadsheet'` : "mimeType='application/vnd.google-apps.spreadsheet'",
+          pageSize: input.maxResults,
+          fields: 'files(id, name, webViewLink, modifiedTime)',
+        });
+        return { spreadsheets: res.data.files || [] };
+      },
+    },
+
+    listSheets: {
+      inputSchema: z.object({
+        spreadsheetId: z.string(),
+      }),
+      outputSchema: z.object({ sheets: z.array(z.object({ sheetId: z.number(), title: z.string() })) }),
+      handler: async ({ connection, input }) => {
+        const sheets = sheetsClient(connection);
+        const res = await sheets.spreadsheets.get({ spreadsheetId: input.spreadsheetId });
+        const sheetList = (res.data.sheets || []).map(s => ({
+          sheetId: s.properties.sheetId,
+          title: s.properties.title,
+        }));
+        return { sheets: sheetList };
+      },
+    },
+
     createSpreadsheet: {
       inputSchema: z.object({
         title: z.string(),

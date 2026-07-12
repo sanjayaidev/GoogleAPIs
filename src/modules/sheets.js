@@ -21,8 +21,10 @@ const cellValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
 module.exports = {
   provider: 'google',
+  // sheets scope for spreadsheet operations + drive.readonly for listing spreadsheets/sheets
   requiredScopes: [
     'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive.readonly',
   ],
 
   actions: {

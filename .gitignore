@@ -21,25 +21,7 @@ build/
 .vscode/
 .idea/
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
 # OS generated files
 .DS_Store
 Thumbs.db
-
-# Testing
-*.test.js
-*.spec.js
-.test*
 ```

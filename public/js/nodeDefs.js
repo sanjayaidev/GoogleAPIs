@@ -148,6 +148,14 @@ const NODE_DEFS = {
         { name: 'fileId', label: 'Select File', type: 'resource', resourceType: 'driveFile' }, { name: 'email', label: 'Share with (email)' },
         { name: 'role', label: 'Role', type: 'select', options: ['reader','commenter','writer'] },
       ]},
+      // Resource loader actions for dropdowns
+      { id: 'getFiles', label: 'Get files (for dropdown)', fields: [
+        { name: 'mimeType', label: 'Filter by MIME type (optional)' },
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '50' },
+      ]},
+      { id: 'getFolders', label: 'Get folders (for dropdown)', fields: [
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '50' },
+      ]},
     ],
   },
 
@@ -158,6 +166,7 @@ const NODE_DEFS = {
     ],
     actions: [
       { id: 'listCalendars', label: 'List calendars', fields: [] },
+      { id: 'getCalendars', label: 'Get calendars (for dropdown)', fields: [] },
       { id: 'listEvents', label: 'List events', fields: [
         { name: 'calendarId', label: 'Select Calendar', type: 'resource', resourceType: 'calendar', placeholder: 'primary' },
         { name: 'timeMin', label: 'Time min (RFC3339)' }, { name: 'timeMax', label: 'Time max (RFC3339)' },

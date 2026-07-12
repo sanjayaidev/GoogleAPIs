@@ -455,10 +455,12 @@ function buildInputFromFields(fields, idPrefix) {
 
 function fieldsHtml(fields, prefix) {
   return fields.map(f => `
-    <div class="field">
+    <div class="field" ${f.type === 'resource' ? `data-resource-field="${f.name}" data-resource-type="${f.resourceType}" data-depends-on="${f.dependsOn || ''}"` : ''}>
       <label>${f.label}</label>
       ${f.textarea
         ? `<textarea id="${prefix}_${f.name}" rows="3" style="width:100%; background:var(--panel); border:1px solid var(--border); color:var(--text); padding:8px; border-radius:6px; font-family:var(--sans);" placeholder="${f.placeholder||''}"></textarea>`
+        : f.type === 'resource'
+          ? `<select id="${prefix}_${f.name}" class="resource-select"><option value="">${f.placeholder || 'Select...'}</option></select><button type="button" class="tbtn load-resources-btn" data-resource-field="${f.name}" data-resource-type="${f.resourceType}" style="font-size:11px; padding:4px 8px; margin-top:6px;">↻ Load options</button>`
         : f.type === 'select'
           ? `<select id="${prefix}_${f.name}">${(f.options||[]).map(o => `<option value="${o}">${o}</option>`).join('')}</select>`
         : f.type === 'checkbox'

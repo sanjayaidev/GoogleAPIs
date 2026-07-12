@@ -23,6 +23,23 @@ module.exports = {
   ],
 
   actions: {
+    listForms: {
+      inputSchema: z.object({
+        query: z.string().optional(),
+        maxResults: z.number().int().min(1).max(100).optional().default(20),
+      }),
+      outputSchema: z.object({ forms: z.array(z.any()) }),
+      handler: async ({ connection, input }) => {
+        const drive = google.drive({ version: 'v3', auth: getOAuthClient(connection) });
+        const res = await drive.files.list({
+          q: input.query ? `${input.query} and mimeType='application/vnd.google-apps.form'` : "mimeType='application/vnd.google-apps.form'",
+          pageSize: input.maxResults,
+          fields: 'files(id, name, webViewLink, modifiedTime)',
+        });
+        return { forms: res.data.files || [] };
+      },
+    },
+
     createForm: {
       inputSchema: z.object({
         title: z.string(),

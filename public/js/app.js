@@ -237,14 +237,14 @@ const ACTION_FIELDS = {
   // --- calendar ---
   listCalendars: [],
   listEvents: [
-    {name:'calendarId', label:'Calendar ID', placeholder:'primary'},
+    {name:'calendarId', label:'Select Calendar', type:'resource', resourceType:'calendar'},
     {name:'timeMin', label:'Time min (RFC3339)', placeholder:'2026-07-12T00:00:00Z'},
     {name:'timeMax', label:'Time max (RFC3339)', placeholder:'2026-07-19T00:00:00Z'},
     {name:'maxResults', label:'Max results', placeholder:'10', type:'number'},
     {name:'query', label:'Search query'},
   ],
   createEvent: [
-    {name:'calendarId', label:'Calendar ID', placeholder:'primary'},
+    {name:'calendarId', label:'Select Calendar', type:'resource', resourceType:'calendar', placeholder:'primary'},
     {name:'summary', label:'Summary'},
     {name:'description', label:'Description', textarea:true},
     {name:'location', label:'Location'},
@@ -257,7 +257,7 @@ const ACTION_FIELDS = {
     {name:'attendees', label:'Attendee emails (comma separated)', parse:'csv'},
   ],
   updateEvent: [
-    {name:'calendarId', label:'Calendar ID', placeholder:'primary'},
+    {name:'calendarId', label:'Select Calendar', type:'resource', resourceType:'calendar', placeholder:'primary'},
     {name:'eventId', label:'Event ID'},
     {name:'summary', label:'Summary'},
     {name:'description', label:'Description', textarea:true},
@@ -270,32 +270,53 @@ const ACTION_FIELDS = {
     {name:'endTimeZone', label:'End time zone', path:'end.timeZone'},
   ],
   deleteEvent: [
-    {name:'calendarId', label:'Calendar ID', placeholder:'primary'},
+    {name:'calendarId', label:'Select Calendar', type:'resource', resourceType:'calendar', placeholder:'primary'},
     {name:'eventId', label:'Event ID'},
   ],
 
   // --- sheets ---
+  listSpreadsheets: [
+    {name:'query', label:'Search query (optional)', placeholder:'budget'},
+    {name:'maxResults', label:'Max results', placeholder:'50', type:'number'},
+  ],
+  listSheets: [
+    {name:'spreadsheetId', label:'Spreadsheet ID'},
+  ],
   createSpreadsheet: [
     {name:'title', label:'Title'},
     {name:'sheetTitle', label:'First sheet title', placeholder:'Sheet1'},
   ],
   readRange: [
-    {name:'spreadsheetId', label:'Spreadsheet ID'},
-    {name:'range', label:'Range', placeholder:'Sheet1!A1:D20'},
+    {name:'spreadsheetId', label:'Select Spreadsheet', type:'resource', resourceType:'spreadsheet'},
+    {name:'sheetName', label:'Select Sheet/Page', type:'resource', resourceType:'sheet', dependsOn:'spreadsheetId'},
+    {name:'range', label:'Range', placeholder:'A1:D20'},
   ],
   appendRow: [
-    {name:'spreadsheetId', label:'Spreadsheet ID'},
-    {name:'range', label:'Range', placeholder:'Sheet1!A1'},
+    {name:'spreadsheetId', label:'Select Spreadsheet', type:'resource', resourceType:'spreadsheet'},
+    {name:'sheetName', label:'Select Sheet/Page', type:'resource', resourceType:'sheet', dependsOn:'spreadsheetId'},
+    {name:'range', label:'Range', placeholder:'A1'},
     {name:'values', label:'Row values (comma separated)', placeholder:'a, b, c', parse:'csv'},
   ],
   updateRange: [
-    {name:'spreadsheetId', label:'Spreadsheet ID'},
-    {name:'range', label:'Range', placeholder:'Sheet1!A1:B2'},
+    {name:'spreadsheetId', label:'Select Spreadsheet', type:'resource', resourceType:'spreadsheet'},
+    {name:'sheetName', label:'Select Sheet/Page', type:'resource', resourceType:'sheet', dependsOn:'spreadsheetId'},
+    {name:'range', label:'Range', placeholder:'A1:B2'},
     {name:'values', label:'Values (JSON array of rows)', textarea:true, placeholder:'[["a","b"],["c","d"]]', parse:'json'},
   ],
   clearRange: [
-    {name:'spreadsheetId', label:'Spreadsheet ID'},
+    {name:'spreadsheetId', label:'Select Spreadsheet', type:'resource', resourceType:'spreadsheet'},
+    {name:'sheetName', label:'Select Sheet/Page', type:'resource', resourceType:'sheet', dependsOn:'spreadsheetId'},
     {name:'range', label:'Range'},
+  ],
+  getRow: [
+    {name:'spreadsheetId', label:'Select Spreadsheet', type:'resource', resourceType:'spreadsheet'},
+    {name:'sheetName', label:'Select Sheet/Page', type:'resource', resourceType:'sheet', dependsOn:'spreadsheetId'},
+    {name:'rowNumber', label:'Row number', type:'number'},
+  ],
+  deleteRow: [
+    {name:'spreadsheetId', label:'Select Spreadsheet', type:'resource', resourceType:'spreadsheet'},
+    {name:'sheetName', label:'Select Sheet/Page', type:'resource', resourceType:'sheet', dependsOn:'spreadsheetId'},
+    {name:'rowNumber', label:'Row number', type:'number'},
   ],
 
   // --- docs ---
@@ -320,39 +341,43 @@ const ACTION_FIELDS = {
     {name:'query', label:'Query', placeholder:"name contains 'report'"},
     {name:'maxResults', label:'Max results', placeholder:'20', type:'number'},
   ],
-  getFile: [{name:'fileId', label:'File ID'}],
+  getFile: [{name:'fileId', label:'Select File', type:'resource', resourceType:'driveFile'}],
   uploadFile: [
     {name:'name', label:'File name'},
     {name:'mimeType', label:'MIME type', placeholder:'text/plain'},
     {name:'content', label:'Content', textarea:true},
-    {name:'parentFolderId', label:'Parent folder ID'},
+    {name:'parentFolderId', label:'Parent folder ID', type:'resource', resourceType:'driveFolder'},
   ],
   createFolder: [
     {name:'name', label:'Folder name'},
-    {name:'parentFolderId', label:'Parent folder ID'},
+    {name:'parentFolderId', label:'Parent folder ID', type:'resource', resourceType:'driveFolder'},
   ],
-  deleteFile: [{name:'fileId', label:'File ID'}],
+  deleteFile: [{name:'fileId', label:'Select File', type:'resource', resourceType:'driveFile'}],
   shareFile: [
-    {name:'fileId', label:'File ID'},
+    {name:'fileId', label:'Select File', type:'resource', resourceType:'driveFile'},
     {name:'email', label:'Share with (email)'},
     {name:'role', label:'Role', type:'select', options:['reader','commenter','writer']},
   ],
 
   // --- forms ---
+  listForms: [
+    {name:'query', label:'Search query (optional)', placeholder:'survey'},
+    {name:'maxResults', label:'Max results', placeholder:'20', type:'number'},
+  ],
   createForm: [
     {name:'title', label:'Title'},
     {name:'description', label:'Description', textarea:true},
   ],
-  getForm: [{name:'formId', label:'Form ID'}],
+  getForm: [{name:'formId', label:'Select Form', type:'resource', resourceType:'form'}],
   addQuestion: [
-    {name:'formId', label:'Form ID'},
+    {name:'formId', label:'Select Form', type:'resource', resourceType:'form'},
     {name:'title', label:'Question title'},
     {name:'type', label:'Question type', type:'select', options:['TEXT','PARAGRAPH_TEXT','MULTIPLE_CHOICE','CHECKBOX','DROPDOWN']},
     {name:'options', label:'Choices (comma separated, for choice types)', parse:'csv'},
     {name:'required', label:'Required', type:'checkbox'},
     {name:'index', label:'Insert position (index)', placeholder:'0', type:'number'},
   ],
-  listResponses: [{name:'formId', label:'Form ID'}],
+  listResponses: [{name:'formId', label:'Select Form', type:'resource', resourceType:'form'}],
 
   // --- googleBusinessProfile ---
   listAccounts: [],

@@ -42,41 +42,52 @@ const NODE_DEFS = {
     label: 'Google Sheets', icon: '📊', color: '#0f9d58',
     triggers: [
       { id: 'rowAdded', label: 'On row added', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet', placeholder: 'Spreadsheet ID or URL' },
-        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
       ]},
       { id: 'rowUpdated', label: 'On row updated', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet', placeholder: 'Spreadsheet ID or URL' },
-        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
       ]},
     ],
     actions: [
+      { id: 'listSpreadsheets', label: 'List spreadsheets', fields: [
+        { name: 'query', label: 'Search query (optional)', placeholder: 'budget' },
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '50' },
+      ]},
+      { id: 'listSheets', label: 'List sheets in spreadsheet', fields: [
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+      ]},
       { id: 'appendRow', label: 'Add a row', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
-        { name: 'range', label: 'Range (sheet!cell)', placeholder: 'Sheet1!A1' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
+        { name: 'range', label: 'Range (sheet!cell)', placeholder: 'A1' },
         { name: 'values', label: 'Row values (comma separated)', placeholder: 'a, b, c', parse: 'csv' },
       ]},
       { id: 'deleteRow', label: 'Delete a row', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
-        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
         { name: 'rowNumber', label: 'Row number', type: 'number' },
       ]},
       { id: 'updateRange', label: 'Update a row/range', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
-        { name: 'range', label: 'Range', placeholder: 'Sheet1!A2:C2' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
+        { name: 'range', label: 'Range', placeholder: 'A2:C2' },
         { name: 'values', label: 'Values (JSON array of rows)', type: 'textarea', placeholder: '[["a","b","c"]]', parse: 'json' },
       ]},
       { id: 'getRow', label: 'Get row', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
-        { name: 'sheetName', label: 'Select Sheet/Page', placeholder: 'Sheet1' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
         { name: 'rowNumber', label: 'Row number', type: 'number' },
       ]},
       { id: 'readRange', label: 'Get many rows (range)', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
-        { name: 'range', label: 'Range', placeholder: 'Sheet1!A1:D20' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
+        { name: 'range', label: 'Range', placeholder: 'A1:D20' },
       ]},
       { id: 'clearRange', label: 'Clear a range', fields: [
-        { name: 'spreadsheetId', label: 'Select Spreadsheet' },
+        { name: 'spreadsheetId', label: 'Select Spreadsheet', type: 'resource', resourceType: 'spreadsheet' },
+        { name: 'sheetName', label: 'Select Sheet/Page', type: 'resource', resourceType: 'sheet', dependsOn: 'spreadsheetId' },
         { name: 'range', label: 'Range' },
       ]},
       { id: 'createSpreadsheet', label: 'Create spreadsheet', fields: [
@@ -90,23 +101,27 @@ const NODE_DEFS = {
     label: 'Google Forms', icon: '📝', color: '#673ab7',
     triggers: [
       { id: 'newResponse', label: 'On new response', fields: [
-        { name: 'formId', label: 'Form ID' },
+        { name: 'formId', label: 'Select Form', type: 'resource', resourceType: 'form' },
       ]},
     ],
     actions: [
+      { id: 'listForms', label: 'List forms', fields: [
+        { name: 'query', label: 'Search query (optional)', placeholder: 'survey' },
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '20' },
+      ]},
       { id: 'createForm', label: 'Create form', fields: [
         { name: 'title', label: 'Title' }, { name: 'description', label: 'Description', type: 'textarea' },
       ]},
-      { id: 'getForm', label: 'Get form', fields: [{ name: 'formId', label: 'Form ID' }] },
+      { id: 'getForm', label: 'Get form', fields: [{ name: 'formId', label: 'Select Form', type: 'resource', resourceType: 'form' }] },
       { id: 'addQuestion', label: 'Add question', fields: [
-        { name: 'formId', label: 'Form ID' },
+        { name: 'formId', label: 'Select Form', type: 'resource', resourceType: 'form' },
         { name: 'title', label: 'Question title' },
         { name: 'type', label: 'Question type', type: 'select', options: ['TEXT','PARAGRAPH_TEXT','MULTIPLE_CHOICE','CHECKBOX','DROPDOWN'] },
         { name: 'options', label: 'Choices (comma separated)', parse: 'csv' },
         { name: 'required', label: 'Required', type: 'checkbox' },
         { name: 'index', label: 'Insert position', type: 'number', placeholder: '0' },
       ]},
-      { id: 'listResponses', label: 'List responses', fields: [{ name: 'formId', label: 'Form ID' }] },
+      { id: 'listResponses', label: 'List responses', fields: [{ name: 'formId', label: 'Select Form', type: 'resource', resourceType: 'form' }] },
     ],
   },
 
@@ -120,17 +135,17 @@ const NODE_DEFS = {
         { name: 'query', label: 'Query', placeholder: "name contains 'report'" },
         { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '20' },
       ]},
-      { id: 'getFile', label: 'Get file', fields: [{ name: 'fileId', label: 'File ID' }] },
+      { id: 'getFile', label: 'Get file', fields: [{ name: 'fileId', label: 'Select File', type: 'resource', resourceType: 'driveFile' }] },
       { id: 'uploadFile', label: 'Upload file', fields: [
         { name: 'name', label: 'File name' }, { name: 'mimeType', label: 'MIME type', placeholder: 'text/plain' },
-        { name: 'content', label: 'Content', type: 'textarea' }, { name: 'parentFolderId', label: 'Parent folder ID' },
+        { name: 'content', label: 'Content', type: 'textarea' }, { name: 'parentFolderId', label: 'Parent folder ID', type: 'resource', resourceType: 'driveFolder' },
       ]},
       { id: 'createFolder', label: 'Create folder', fields: [
-        { name: 'name', label: 'Folder name' }, { name: 'parentFolderId', label: 'Parent folder ID' },
+        { name: 'name', label: 'Folder name' }, { name: 'parentFolderId', label: 'Parent folder ID', type: 'resource', resourceType: 'driveFolder' },
       ]},
-      { id: 'deleteFile', label: 'Delete file', fields: [{ name: 'fileId', label: 'File ID' }] },
+      { id: 'deleteFile', label: 'Delete file', fields: [{ name: 'fileId', label: 'Select File', type: 'resource', resourceType: 'driveFile' }] },
       { id: 'shareFile', label: 'Share file', fields: [
-        { name: 'fileId', label: 'File ID' }, { name: 'email', label: 'Share with (email)' },
+        { name: 'fileId', label: 'Select File', type: 'resource', resourceType: 'driveFile' }, { name: 'email', label: 'Share with (email)' },
         { name: 'role', label: 'Role', type: 'select', options: ['reader','commenter','writer'] },
       ]},
     ],
@@ -144,12 +159,12 @@ const NODE_DEFS = {
     actions: [
       { id: 'listCalendars', label: 'List calendars', fields: [] },
       { id: 'listEvents', label: 'List events', fields: [
-        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' },
+        { name: 'calendarId', label: 'Select Calendar', type: 'resource', resourceType: 'calendar', placeholder: 'primary' },
         { name: 'timeMin', label: 'Time min (RFC3339)' }, { name: 'timeMax', label: 'Time max (RFC3339)' },
         { name: 'maxResults', label: 'Max results', type: 'number' }, { name: 'query', label: 'Search query' },
       ]},
       { id: 'createEvent', label: 'Create event', fields: [
-        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' },
+        { name: 'calendarId', label: 'Select Calendar', type: 'resource', resourceType: 'calendar', placeholder: 'primary' },
         { name: 'summary', label: 'Summary' }, { name: 'description', label: 'Description', type: 'textarea' },
         { name: 'location', label: 'Location' },
         { name: 'startDateTime', label: 'Start date/time', path: 'start.dateTime' },
@@ -157,13 +172,13 @@ const NODE_DEFS = {
         { name: 'attendees', label: 'Attendee emails (comma separated)', parse: 'csv' },
       ]},
       { id: 'updateEvent', label: 'Update event', fields: [
-        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' }, { name: 'eventId', label: 'Event ID' },
+        { name: 'calendarId', label: 'Select Calendar', type: 'resource', resourceType: 'calendar', placeholder: 'primary' }, { name: 'eventId', label: 'Event ID' },
         { name: 'summary', label: 'Summary' },
         { name: 'startDateTime', label: 'Start date/time', path: 'start.dateTime' },
         { name: 'endDateTime', label: 'End date/time', path: 'end.dateTime' },
       ]},
       { id: 'deleteEvent', label: 'Delete event', fields: [
-        { name: 'calendarId', label: 'Calendar ID', placeholder: 'primary' }, { name: 'eventId', label: 'Event ID' },
+        { name: 'calendarId', label: 'Select Calendar', type: 'resource', resourceType: 'calendar', placeholder: 'primary' }, { name: 'eventId', label: 'Event ID' },
       ]},
     ],
   },

@@ -25,6 +25,7 @@ module.exports = {
   requiredScopes: [
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive',
   ],
 
   actions: {

@@ -27,11 +27,11 @@ const eventTimeSchema = z.object({
 
 module.exports = {
   provider: 'google',
-  // calendar scopes + drive.readonly for listing calendars (if needed)
+  // calendar scopes + drive for listing calendars (needs full drive scope to access user's calendars)
   requiredScopes: [
     'https://www.googleapis.com/auth/calendar.events',
     'https://www.googleapis.com/auth/calendar.readonly',
-    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/drive',
   ],
 
   actions: {

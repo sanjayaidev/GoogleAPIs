@@ -55,6 +55,17 @@ router.post('/:module/:action', async (req, res, next) => {
       });
     }
 
+    // Connections are scoped to the module they were OAuth-connected for
+    // (see migration 002 + src/routes/oauth.js). A connection with no
+    // `module` value is a legacy row from before this scoping existed -
+    // allow it through on provider match alone so old data keeps working.
+    if (connection.module && connection.module !== moduleName) {
+      return res.status(400).json({
+        error: 'module_mismatch',
+        message: `This account was connected for "${connection.module}", not "${moduleName}". Connect a separate account for ${moduleName} from the module bar.`,
+      });
+    }
+
     const output = await action.handler({ connection, input: parsed.data });
     res.json({ success: true, output });
   } catch (err) {

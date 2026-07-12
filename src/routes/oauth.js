@@ -104,6 +104,7 @@ router.get('/google/callback', async (req, res) => {
     const { error: insertError } = await supabase.from(TABLES.CONNECTIONS).insert({
       user_id: entry.userId,
       provider: 'google',
+      module: entry.moduleName, // scopes this account to the module it was connected for (fixes "one account shared by every module")
       account_label: profile.email,
       access_token: tokens.access_token,
       refresh_token: tokens.refresh_token || '',

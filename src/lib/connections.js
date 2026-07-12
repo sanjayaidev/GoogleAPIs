@@ -47,6 +47,7 @@ async function getConnection(connectionId, userId) {
   return {
     id: data.id,
     provider: data.provider,
+    module: data.module || null,
     accountLabel: data.account_label,
     accessToken,
     refreshToken,

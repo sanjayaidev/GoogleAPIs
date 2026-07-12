@@ -75,7 +75,10 @@
   .module-name { display: flex; align-items: center; gap: 10px; font-size: 14px; }
   .socket { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--text-dim); position: relative; flex-shrink: 0; }
   .socket.on { border-color: var(--amber); background: var(--amber); box-shadow: 0 0 10px var(--amber); }
-  .conn-label { font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
+  .conn-label { font-family: var(--mono); font-size: 12px; color: var(--text-dim); display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .conn-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--bg, #f3f4f6); border: 1px solid var(--border); border-radius: 999px; padding: 2px 4px 2px 8px; }
+  .conn-chip-x { border: none; background: none; color: #dc2626; font-size: 13px; line-height: 1; cursor: pointer; padding: 2px 4px; border-radius: 50%; }
+  .conn-chip-x:hover { background: rgba(220,38,38,0.12); }
 
   .action-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .action-list button { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: var(--sans); }

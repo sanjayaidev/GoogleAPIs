@@ -11,7 +11,7 @@ router.get('/', async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from(TABLES.CONNECTIONS)
-      .select('id, provider, account_label, status, scopes, created_at')
+      .select('id, provider, module, account_label, status, scopes, created_at')
       .eq('user_id', req.user.id)
       .order('created_at', { ascending: false });
 

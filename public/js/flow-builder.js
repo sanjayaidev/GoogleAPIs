@@ -3,20 +3,32 @@
 // /flows - so anything built here is a real, runnable flow, not a mockup.
 //
 // Simplification (matches the linear flowRunner - see src/lib/flowRunner.js):
-// node order = execution order. Dragging repositions a node visually but does
-// not reorder the chain; the first node you add is treated as the trigger,
-// everything after is an ordered action step. Real branching isn't
-// implemented server-side yet, so this canvas doesn't offer it either.
+// execution order is a single chain. The canvas lets you draw and remove
+// connectors freely (n8n-style drag from an output socket to an input
+// socket), but under the hood we still serialize to the backend's linear
+// `steps` array by walking the chain from the trigger node through its
+// connectors. Real branching isn't implemented server-side yet, so this
+// canvas enforces one outgoing + one incoming connector per node.
 
 const API = '';
 let apiKey = localStorage.getItem('sm_api_key') || null;
 let modulesCache = [];       // [{name, provider, actions, triggers}]
-let connectionsCache = [];   // [{id, provider, account_label, status}]
+let connectionsCache = [];   // [{id, provider, module, account_label, status}]
 let flowsCache = [];
 let canvasNodes = [];        // [{id, module, role, typeId, connectionId, config, x, y}]
+let edges = [];              // [{from: nodeId, to: nodeId}]
 let selectedNodeId = null;
 let lastSavedFlowId = null;
 let nodeSeq = 1;
+
+// canvas view state
+let zoom = 1;
+let panX = 40;
+let panY = 40;
+const ZOOM_MIN = 0.35, ZOOM_MAX = 1.75;
+
+const NODE_W = 190;
+const NODE_H = 64; // approximate rendered height, used for socket + edge geometry
 
 function headers() {
   return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
@@ -44,6 +56,7 @@ async function init() {
   await loadConnections();
   await loadFlows();
   renderModuleBar();
+  applyCanvasTransform();
   renderCanvas();
 }
 
@@ -83,9 +96,18 @@ function providerFor(moduleName) {
   return mod ? mod.provider : 'google';
 }
 
+// A connection belongs to a module only if it was connected for that exact
+// module. Legacy rows saved before per-module scoping existed have no
+// `module` value - fall back to provider match for those so old data still
+// works, but a module-scoped connection never leaks into another module's
+// list (this is the fix for "shows one account for all" modules).
 function connectionsForModule(moduleName) {
   const provider = providerFor(moduleName);
-  return connectionsCache.filter(c => c.provider === provider && c.status === 'active');
+  return connectionsCache.filter(c =>
+    c.status === 'active' &&
+    c.provider === provider &&
+    (c.module ? c.module === moduleName : true)
+  );
 }
 
 function renderModuleBar() {
@@ -101,7 +123,10 @@ function renderModuleBar() {
         <div class="name">${def.label}</div>
         <button class="connect-btn" data-connect-module="${name}" type="button">${connected ? '+ add another' : 'Connect'}</button>
         <div class="conn-status ${connected ? 'on' : ''}">
-          ${connected ? conns.map(c => 'Account Connected: ' + c.account_label).join('<br>') : 'Not connected'}
+          ${connected ? conns.map(c => `
+            <span class="acc-chip">${c.account_label}
+              <button type="button" class="acc-chip-x" data-disconnect-conn="${c.id}" title="Disconnect this account">×</button>
+            </span>`).join('') : 'Not connected'}
         </div>
         <div class="add-hint">click card to add node →</div>
       </div>`;
@@ -115,6 +140,12 @@ function wireModuleBarDelegation() {
     if (connectBtn) {
       e.stopPropagation();
       connectModule(connectBtn.dataset.connectModule);
+      return;
+    }
+    const disconnectBtn = e.target.closest('[data-disconnect-conn]');
+    if (disconnectBtn) {
+      e.stopPropagation();
+      disconnectConnection(disconnectBtn.dataset.disconnectConn);
       return;
     }
     const card = e.target.closest('[data-add-node]');
@@ -131,12 +162,94 @@ async function connectModule(moduleName) {
   } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 }
 
+async function disconnectConnection(connectionId) {
+  if (!confirm('Disconnect this account? Any node using it will need a new account picked.')) return;
+  try {
+    const res = await fetch(`${API}/connections/${connectionId}`, { method: 'DELETE', headers: headers() });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast(data.message || 'Could not disconnect', 'error');
+      return;
+    }
+    // Clear this connection off any node that was using it.
+    canvasNodes.forEach(n => { if (n.connectionId === connectionId) n.connectionId = ''; });
+    await loadConnections();
+    renderModuleBar();
+    renderCanvas();
+    renderProps();
+    showToast('Account disconnected.', 'ok');
+  } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+}
+
+// ---------- canvas view: zoom + pan ----------
+
+function applyCanvasTransform() {
+  const scroll = document.getElementById('canvasScroll');
+  scroll.style.setProperty('--zoom', zoom);
+  scroll.style.setProperty('--panx', panX + 'px');
+  scroll.style.setProperty('--pany', panY + 'px');
+  document.getElementById('zoomPct').textContent = Math.round(zoom * 100) + '%';
+}
+
+function setZoom(newZoom, centerClientX, centerClientY) {
+  newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, newZoom));
+  const scroll = document.getElementById('canvasScroll');
+  const rect = scroll.getBoundingClientRect();
+  const cx = centerClientX !== undefined ? centerClientX - rect.left : rect.width / 2;
+  const cy = centerClientY !== undefined ? centerClientY - rect.top : rect.height / 2;
+  // keep the world point under the cursor fixed while zooming
+  const worldX = (cx - panX) / zoom;
+  const worldY = (cy - panY) / zoom;
+  zoom = newZoom;
+  panX = cx - worldX * zoom;
+  panY = cy - worldY * zoom;
+  applyCanvasTransform();
+}
+
+function resetZoom() {
+  zoom = 1; panX = 40; panY = 40;
+  applyCanvasTransform();
+}
+
+function wireZoomPan() {
+  const scroll = document.getElementById('canvasScroll');
+
+  scroll.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.0015;
+    setZoom(zoom * (1 + delta), e.clientX, e.clientY);
+  }, { passive: false });
+
+  let panning = null; // { startX, startY, panX0, panY0 }
+  scroll.addEventListener('mousedown', (e) => {
+    // only pan when clicking empty canvas background, not a node/socket/edge
+    if (e.target.closest('.node-box') || e.target.closest('svg')) return;
+    panning = { startX: e.clientX, startY: e.clientY, panX0: panX, panY0: panY };
+    scroll.classList.add('panning');
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!panning) return;
+    panX = panning.panX0 + (e.clientX - panning.startX);
+    panY = panning.panY0 + (e.clientY - panning.startY);
+    applyCanvasTransform();
+  });
+  document.addEventListener('mouseup', () => { panning = null; scroll.classList.remove('panning'); });
+
+  document.getElementById('zoomInBtn').addEventListener('click', () => setZoom(zoom * 1.2));
+  document.getElementById('zoomOutBtn').addEventListener('click', () => setZoom(zoom / 1.2));
+  document.getElementById('zoomResetBtn').addEventListener('click', resetZoom);
+}
+
 // ---------- canvas: nodes + edges ----------
 
-function addNode(moduleName) {
+function addNode(moduleName, opts) {
+  opts = opts || {};
   const def = NODE_DEFS[moduleName];
   if (!def) return;
-  const isFirst = canvasNodes.length === 0;
+  // "first node" here means "no trigger exists yet", not "canvas is empty" -
+  // if the trigger node got deleted, the next node added should be able to
+  // become the trigger again even if other action nodes remain.
+  const isFirst = !canvasNodes.some(n => n.role === 'trigger');
   const firstTrigger = def.triggers[0];
   const firstAction = def.actions[0];
   if (isFirst && !firstTrigger) {
@@ -144,6 +257,18 @@ function addNode(moduleName) {
     return;
   }
   const conns = connectionsForModule(moduleName);
+
+  // place near the selected node (if any) so a chain reads left-to-right,
+  // otherwise stagger from the last node, otherwise start near the origin.
+  const fromNode = !isFirst ? canvasNodes.find(n => n.id === selectedNodeId) : null;
+  let x, y;
+  if (opts.x !== undefined) { x = opts.x; y = opts.y; }
+  else if (fromNode) { x = fromNode.x + 260; y = fromNode.y; }
+  else if (canvasNodes.length) {
+    const last = canvasNodes[canvasNodes.length - 1];
+    x = last.x + 260; y = last.y;
+  } else { x = 60; y = 60; }
+
   const node = {
     id: 'n' + (nodeSeq++),
     module: moduleName,
@@ -151,10 +276,16 @@ function addNode(moduleName) {
     typeId: isFirst ? firstTrigger.id : (firstAction ? firstAction.id : ''),
     connectionId: conns[0] ? conns[0].id : '',
     config: {},
-    x: 40 + (canvasNodes.length % 4) * 230,
-    y: 40 + Math.floor(canvasNodes.length / 4) * 130,
+    x, y,
   };
   canvasNodes.push(node);
+
+  // Auto-wire from the previously selected node if it has a free outgoing
+  // slot - mirrors n8n's "+ " on a node auto-connecting the new node.
+  if (fromNode && !edges.some(e => e.from === fromNode.id)) {
+    edges.push({ from: fromNode.id, to: node.id });
+  }
+
   selectedNodeId = node.id;
   renderCanvas();
   renderNodeSide();
@@ -163,10 +294,32 @@ function addNode(moduleName) {
 
 function removeNode(id) {
   canvasNodes = canvasNodes.filter(n => n.id !== id);
+  edges = edges.filter(e => e.from !== id && e.to !== id);
   if (selectedNodeId === id) selectedNodeId = null;
   renderCanvas();
   renderNodeSide();
   renderProps();
+}
+
+function connectNodes(fromId, toId) {
+  if (fromId === toId) return;
+  const fromNode = canvasNodes.find(n => n.id === fromId);
+  const toNode = canvasNodes.find(n => n.id === toId);
+  if (!fromNode || !toNode) return;
+  if (toNode.role === 'trigger') {
+    showToast("Can't connect into a trigger node - triggers only have an output.", 'error');
+    return;
+  }
+  // enforce single linear chain: at most one outgoing edge per node, one
+  // incoming edge per node (matches the backend's ordered steps array)
+  edges = edges.filter(e => e.from !== fromId && e.to !== toId);
+  edges.push({ from: fromId, to: toId });
+  renderCanvas();
+}
+
+function disconnectEdge(fromId, toId) {
+  edges = edges.filter(e => !(e.from === fromId && e.to === toId));
+  renderCanvas();
 }
 
 function nodeTypeDef(node) {
@@ -181,45 +334,93 @@ function renderCanvas() {
   const empty = document.getElementById('canvasEmpty');
   empty.style.display = canvasNodes.length ? 'none' : 'block';
 
-  canvas.innerHTML = canvasNodes.map((n, i) => {
+  canvas.innerHTML = canvasNodes.map((n) => {
     const def = NODE_DEFS[n.module];
     const typeDef = nodeTypeDef(n);
     const conns = connectionsForModule(n.module);
     const conn = conns.find(c => c.id === n.connectionId);
+    const hasOut = edges.some(e => e.from === n.id);
+    const hasIn = edges.some(e => e.to === n.id);
     return `
       <div class="node-box ${n.id === selectedNodeId ? 'selected' : ''}" data-node-id="${n.id}" style="left:${n.x}px; top:${n.y}px;">
         <div class="nb-role">${n.role}</div>
         <button class="nb-remove" type="button" data-remove-node="${n.id}" title="Remove node">✕</button>
         <div class="nb-head"><span class="nb-icon">${def.icon}</span>${def.label}</div>
-        <div class="nb-sub">${typeDef ? typeDef.label : 'choose an operation'}${conn ? ' · ' + conn.account_label : ''}</div>
-        ${i < canvasNodes.length - 1 ? '<div class="nb-socket"></div>' : ''}
+        <div class="nb-sub">${typeDef ? typeDef.label : 'choose an operation'}${conn ? ' · ' + conn.account_label : (n.connectionId === '' && conns.length === 0 ? ' · no account' : '')}</div>
+        ${n.role !== 'trigger' ? `<div class="nb-socket in ${hasIn ? 'filled' : ''}" data-socket="in" data-node-id="${n.id}" title="Drag a connector here"></div>` : ''}
+        <div class="nb-socket out ${hasOut ? 'filled' : ''}" data-socket="out" data-node-id="${n.id}" title="Drag to another node's input to connect"></div>
       </div>`;
   }).join('');
 
   drawEdges();
 }
 
+// socket position in world (unscaled canvas) coordinates
+function socketPos(node, which) {
+  const y = node.y + NODE_H / 2;
+  const x = which === 'out' ? node.x + NODE_W : node.x;
+  return { x, y };
+}
+
+function edgePathD(p1, p2) {
+  const mx = (p1.x + p2.x) / 2;
+  return `M ${p1.x} ${p1.y} C ${mx} ${p1.y}, ${mx} ${p2.y}, ${p2.x} ${p2.y}`;
+}
+
 function drawEdges() {
   const svg = document.getElementById('edgesSvg');
-  const nodeW = 190, nodeH = 56;
-  let paths = '';
-  for (let i = 1; i < canvasNodes.length; i++) {
-    const a = canvasNodes[i - 1], b = canvasNodes[i];
-    const x1 = a.x + nodeW, y1 = a.y + nodeH / 2;
-    const x2 = b.x, y2 = b.y + nodeH / 2;
-    const mx = (x1 + x2) / 2;
-    paths += `<path d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" />`;
+  let html = '';
+  edges.forEach(edge => {
+    const a = canvasNodes.find(n => n.id === edge.from);
+    const b = canvasNodes.find(n => n.id === edge.to);
+    if (!a || !b) return;
+    const p1 = socketPos(a, 'out');
+    const p2 = socketPos(b, 'in');
+    const d = edgePathD(p1, p2);
+    const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+    html += `<path class="edge-hit" d="${d}" data-edge-from="${edge.from}" data-edge-to="${edge.to}"></path>`;
+    html += `<path class="edge-line" d="${d}"></path>`;
+    html += `<g class="edge-del-btn" data-edge-from="${edge.from}" data-edge-to="${edge.to}">
+      <circle cx="${mx}" cy="${my}" r="9"></circle>
+      <text x="${mx}" y="${my + 1}">✕</text>
+    </g>`;
+  });
+  if (dragEdgeState) {
+    html += `<path class="edge-drawing" d="${edgePathD(dragEdgeState.from, dragEdgeState.current)}"></path>`;
   }
-  svg.innerHTML = paths;
+  svg.innerHTML = html;
+}
+
+// ---------- canvas: node drag, socket-drag connect, selection ----------
+
+let dragEdgeState = null; // { fromId, from: {x,y}, current: {x,y} }
+
+function clientToWorld(clientX, clientY) {
+  const scroll = document.getElementById('canvasScroll');
+  const rect = scroll.getBoundingClientRect();
+  return {
+    x: (clientX - rect.left - panX) / zoom,
+    y: (clientY - rect.top - panY) / zoom,
+  };
 }
 
 function wireCanvasDragAndSelect() {
   const canvas = document.getElementById('canvas');
-  let dragging = null; // { id, offsetX, offsetY }
+  let dragging = null; // { id, offsetX, offsetY } in world units
 
   canvas.addEventListener('mousedown', (e) => {
     const removeBtn = e.target.closest('[data-remove-node]');
     if (removeBtn) { removeNode(removeBtn.dataset.removeNode); return; }
+
+    const socket = e.target.closest('.nb-socket');
+    if (socket && socket.dataset.socket === 'out') {
+      e.stopPropagation();
+      const node = canvasNodes.find(n => n.id === socket.dataset.nodeId);
+      if (!node) return;
+      const from = socketPos(node, 'out');
+      dragEdgeState = { fromId: node.id, from, current: clientToWorld(e.clientX, e.clientY) };
+      return;
+    }
 
     const box = e.target.closest('.node-box');
     if (!box) return;
@@ -230,25 +431,52 @@ function wireCanvasDragAndSelect() {
     renderProps();
 
     const node = canvasNodes.find(n => n.id === id);
-    const rect = box.getBoundingClientRect();
-    dragging = { id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top };
+    const world = clientToWorld(e.clientX, e.clientY);
+    dragging = { id, offsetX: world.x - node.x, offsetY: world.y - node.y };
     box.style.cursor = 'grabbing';
   });
 
+  document.getElementById('edgesSvg').addEventListener('click', (e) => {
+    const del = e.target.closest('[data-edge-from]');
+    if (del) disconnectEdge(del.dataset.edgeFrom, del.dataset.edgeTo);
+  });
+
   document.addEventListener('mousemove', (e) => {
+    if (dragEdgeState) {
+      dragEdgeState.current = clientToWorld(e.clientX, e.clientY);
+      drawEdges();
+      // highlight a valid drop target
+      document.querySelectorAll('.node-box.drag-target').forEach(el => el.classList.remove('drag-target'));
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const overSocket = hit ? hit.closest('.nb-socket[data-socket="in"]') : null;
+      if (overSocket) {
+        const box = canvas.querySelector(`[data-node-id="${overSocket.dataset.nodeId}"]`);
+        if (box) box.classList.add('drag-target');
+      }
+      return;
+    }
     if (!dragging) return;
-    const scrollEl = document.getElementById('canvasScroll');
-    const scrollRect = scrollEl.getBoundingClientRect();
     const node = canvasNodes.find(n => n.id === dragging.id);
     if (!node) return;
-    node.x = Math.max(0, e.clientX - scrollRect.left + scrollEl.scrollLeft - dragging.offsetX);
-    node.y = Math.max(0, e.clientY - scrollRect.top + scrollEl.scrollTop - dragging.offsetY);
+    const world = clientToWorld(e.clientX, e.clientY);
+    node.x = Math.max(0, world.x - dragging.offsetX);
+    node.y = Math.max(0, world.y - dragging.offsetY);
     const box = canvas.querySelector(`[data-node-id="${node.id}"]`);
     if (box) { box.style.left = node.x + 'px'; box.style.top = node.y + 'px'; }
     drawEdges();
   });
 
-  document.addEventListener('mouseup', () => { dragging = null; });
+  document.addEventListener('mouseup', (e) => {
+    if (dragEdgeState) {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const target = hit ? hit.closest('.nb-socket[data-socket="in"]') : null;
+      document.querySelectorAll('.node-box.drag-target').forEach(el => el.classList.remove('drag-target'));
+      if (target) connectNodes(dragEdgeState.fromId, target.dataset.nodeId);
+      dragEdgeState = null;
+      drawEdges();
+    }
+    dragging = null;
+  });
 }
 
 // ---------- left panel: triggers/actions for the selected node's module ----------
@@ -261,7 +489,7 @@ function renderNodeSide() {
     return;
   }
   const def = NODE_DEFS[node.module];
-  const isFirstNode = canvasNodes[0] && canvasNodes[0].id === node.id;
+  const isFirstNode = node.role === 'trigger';
 
   const triggerItems = def.triggers.map(t => `
     <div class="op-item trigger ${node.role === 'trigger' && node.typeId === t.id ? 'selected' : ''} ${isFirstNode ? '' : 'disabled'}"
@@ -338,7 +566,11 @@ function renderProps() {
         <option value="">choose account…</option>
         ${conns.map(c => `<option value="${c.id}" ${c.id === node.connectionId ? 'selected' : ''}>${c.account_label}</option>`).join('')}
       </select>
-      ${conns.length === 0 ? `<div class="hint">No account connected for ${NODE_DEFS[node.module].label} yet — connect one from the module bar above.</div>` : ''}
+      <div style="margin-top:8px;">
+        <button type="button" class="tbtn" id="propConnectMoreBtn" data-connect-module="${node.module}" style="font-size:11px; padding:5px 10px;">+ connect another account</button>
+        ${node.connectionId ? `<button type="button" class="tbtn" id="propDisconnectBtn" data-disconnect-conn="${node.connectionId}" style="font-size:11px; padding:5px 10px; color:var(--danger); border-color:var(--danger); margin-left:6px;">disconnect this one</button>` : ''}
+      </div>
+      ${conns.length === 0 ? `<div class="hint">No account connected for ${NODE_DEFS[node.module].label} yet — connect one above.</div>` : ''}
     </div>`;
 
   const fields = typeDef ? typeDef.fields : [];
@@ -369,6 +601,12 @@ function renderProps() {
 
 function wirePropsDelegation() {
   const panel = document.getElementById('propsPanel');
+  panel.addEventListener('click', (e) => {
+    const connectBtn = e.target.closest('[data-connect-module]');
+    if (connectBtn) { connectModule(connectBtn.dataset.connectModule); return; }
+    const disconnectBtn = e.target.closest('[data-disconnect-conn]');
+    if (disconnectBtn) { disconnectConnection(disconnectBtn.dataset.disconnectConn); return; }
+  });
   panel.addEventListener('change', (e) => {
     const node = canvasNodes.find(n => n.id === selectedNodeId);
     if (!node) return;
@@ -376,6 +614,7 @@ function wirePropsDelegation() {
     if (e.target.id === 'propConnSelect') {
       node.connectionId = e.target.value;
       renderCanvas();
+      renderProps();
       return;
     }
     const fieldEl = e.target.closest('[data-prop-field]');
@@ -399,6 +638,100 @@ function wirePropsDelegation() {
   });
 }
 
+// ---------- quick-add node search (Tab) ----------
+
+function buildQuickAddIndex() {
+  const items = [];
+  MODULE_ORDER.forEach(moduleName => {
+    const def = NODE_DEFS[moduleName];
+    if (!def) return;
+    const isFirst = !canvasNodes.some(n => n.role === 'trigger');
+    (isFirst ? def.triggers : def.actions).forEach(op => {
+      items.push({ moduleName, role: isFirst ? 'trigger' : 'action', typeId: op.id, label: `${def.label} · ${op.label}`, icon: def.icon });
+    });
+  });
+  return items;
+}
+
+function openQuickAdd() {
+  const panel = document.getElementById('quickAdd');
+  const input = document.getElementById('quickAddInput');
+  panel.classList.add('open');
+  input.value = '';
+  renderQuickAddList('');
+  setTimeout(() => input.focus(), 0);
+}
+
+function closeQuickAdd() {
+  document.getElementById('quickAdd').classList.remove('open');
+}
+
+function renderQuickAddList(query) {
+  const list = document.getElementById('quickAddList');
+  const items = buildQuickAddIndex().filter(it => it.label.toLowerCase().includes(query.toLowerCase()));
+  if (!items.length) { list.innerHTML = '<div class="quick-add-empty">No matching triggers/actions.</div>'; return; }
+  list.innerHTML = items.map((it, i) => `
+    <div class="quick-add-item ${i === 0 ? 'active' : ''}" data-add-module="${it.moduleName}" data-add-type="${it.typeId}">
+      <span class="icon">${it.icon}</span>${it.label}
+    </div>`).join('');
+}
+
+function wireQuickAdd() {
+  document.getElementById('quickAddBtn').addEventListener('click', openQuickAdd);
+  const input = document.getElementById('quickAddInput');
+  input.addEventListener('input', () => renderQuickAddList(input.value));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeQuickAdd(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#quickAddList .quick-add-item');
+      if (first) first.click();
+    }
+  });
+  document.getElementById('quickAddList').addEventListener('click', (e) => {
+    const item = e.target.closest('[data-add-module]');
+    if (!item) return;
+    addNode(item.dataset.addModule);
+    // set the specific trigger/action type picked, not just the module default
+    const node = canvasNodes[canvasNodes.length - 1];
+    if (node) node.typeId = item.dataset.addType;
+    closeQuickAdd();
+    renderCanvas();
+    renderNodeSide();
+    renderProps();
+  });
+  document.getElementById('canvasScroll').addEventListener('mousedown', (e) => {
+    if (!e.target.closest('.quick-add')) closeQuickAdd();
+  });
+}
+
+// ---------- keyboard shortcuts ----------
+
+function isTypingInField() {
+  const tag = document.activeElement && document.activeElement.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
+function wireKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    if (document.getElementById('quickAdd').classList.contains('open')) return; // let its own handler run
+
+    if (e.key === 'Tab' && !isTypingInField()) {
+      e.preventDefault();
+      openQuickAdd();
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !isTypingInField() && selectedNodeId) {
+      e.preventDefault();
+      removeNode(selectedNodeId);
+      return;
+    }
+    if ((e.key === '+' || e.key === '=') && !isTypingInField()) { setZoom(zoom * 1.2); return; }
+    if (e.key === '-' && !isTypingInField()) { setZoom(zoom / 1.2); return; }
+    if (e.key === '0' && !isTypingInField()) { resetZoom(); return; }
+    if (e.key === 'Escape') { closeQuickAdd(); dragEdgeState = null; drawEdges(); }
+  });
+}
+
 // ---------- save / run ----------
 
 function buildInputMapForNode(node, typeDef) {
@@ -411,21 +744,54 @@ function buildInputMapForNode(node, typeDef) {
   return inputMap;
 }
 
+// Walks the connector graph from the trigger node to produce the ordered
+// chain the backend's linear flowRunner expects. Returns null (and toasts
+// an explanation) if the graph isn't a single connected chain yet.
+function computeOrderedChain() {
+  if (canvasNodes.length === 0) return null;
+  const trigger = canvasNodes.find(n => n.role === 'trigger');
+  if (!trigger) { showToast('Add a trigger node first (it must be the first node you add).', 'error'); return null; }
+
+  const nextByFrom = new Map(edges.map(e => [e.from, e.to]));
+  const chain = [trigger];
+  const seen = new Set([trigger.id]);
+  let cur = trigger;
+  while (nextByFrom.has(cur.id)) {
+    const nextId = nextByFrom.get(cur.id);
+    if (seen.has(nextId)) { showToast('That connector graph loops back on itself - remove the cycle before saving.', 'error'); return null; }
+    const nextNode = canvasNodes.find(n => n.id === nextId);
+    if (!nextNode) break;
+    chain.push(nextNode);
+    seen.add(nextNode.id);
+    cur = nextNode;
+  }
+
+  const unconnected = canvasNodes.filter(n => !seen.has(n.id));
+  if (unconnected.length) {
+    showToast(`${unconnected.length} node(s) aren't connected into the trigger's chain yet - drag a connector from the previous node's output socket into each one's input socket.`, 'error');
+    return null;
+  }
+  return chain;
+}
+
 async function saveFlow() {
   const name = document.getElementById('flowNameInput').value.trim() || 'Untitled flow';
   if (canvasNodes.length === 0) return showToast('Add at least one node first.', 'error');
 
-  for (const n of canvasNodes) {
+  const chain = computeOrderedChain();
+  if (!chain) return;
+
+  for (const n of chain) {
     if (!n.connectionId) return showToast(`Pick an account for the ${NODE_DEFS[n.module].label} node.`, 'error');
     if (!n.typeId) return showToast(`Pick a trigger/action for the ${NODE_DEFS[n.module].label} node.`, 'error');
   }
 
   let triggerType = 'manual';
   let triggerConfig = {};
-  let actionNodes = canvasNodes;
+  let actionNodes = chain;
 
-  if (canvasNodes[0].role === 'trigger') {
-    const triggerNode = canvasNodes[0];
+  if (chain[0].role === 'trigger') {
+    const triggerNode = chain[0];
     const triggerDef = nodeTypeDef(triggerNode);
     triggerType = triggerDef && triggerDef.kind === 'webhook' ? 'webhook' : 'schedule';
     triggerConfig = {
@@ -434,7 +800,7 @@ async function saveFlow() {
       connectionId: triggerNode.connectionId,
       config: buildInputMapForNode(triggerNode, triggerDef),
     };
-    actionNodes = canvasNodes.slice(1);
+    actionNodes = chain.slice(1);
   }
 
   if (actionNodes.length === 0) {
@@ -487,9 +853,12 @@ function wireStaticButtons() {
   });
 
   wireModuleBarDelegation();
+  wireZoomPan();
   wireCanvasDragAndSelect();
   wireNodeSideDelegation();
   wirePropsDelegation();
+  wireQuickAdd();
+  wireKeyboardShortcuts();
 
   // OAuth redirect lands back here with ?provider=&email= - refresh connections.
   const params = new URLSearchParams(location.search);

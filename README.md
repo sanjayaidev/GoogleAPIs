@@ -41,6 +41,29 @@ Your own API key authenticates every call; OAuth connections are stored in Supab
 5. Use **Flow builder** to chain a few actions into a saved, ordered sequence, then hit
    **run** on it from the flows list.
 
+### Connected accounts are scoped per module
+
+Each "Connect" click stores which module the OAuth grant was for (`sm_connections.module`).
+Connecting Gmail does **not** make Sheets/Docs/Drive/Calendar/Forms/Business Profile show as
+connected too - each module lists only the accounts explicitly connected for it, and you can
+connect multiple accounts per module and pick which one a given action/flow-node uses. Click the
+**×** on an account chip (module bar, classic dashboard, or a flow node's properties panel) to
+disconnect that specific account - `DELETE /connections/:id`.
+
+### Flow builder canvas
+
+The flow builder (`/flow-builder.html`) is a node-graph editor in the style of n8n:
+
+- **Zoom**: mouse wheel, the +/− buttons, or `+` / `-` / `0` (reset) keys
+- **Pan**: click-drag empty canvas
+- **Add a node**: click a module card, or press `Tab` for a searchable quick-add panel
+- **Remove a node**: the node's × button, or select it and press `Delete`/`Backspace`
+- **Connect/disconnect nodes**: drag from a node's output socket (right) to another node's
+  input socket (left) to wire them; click a connector's × to remove it
+- **Run order**: derived by walking the connector graph from the trigger node - the backend
+  flow runner is still strictly linear (see below), so all nodes must end up in one connected
+  chain from the trigger before you can save
+
 ## Setup
 
 1. `npm install`
@@ -53,7 +76,9 @@ Your own API key authenticates every call; OAuth connections are stored in Supab
    - Create a Google Cloud project, OAuth consent screen + credentials (Web application),
      add `GOOGLE_REDIRECT_URI` as an authorized redirect URI
    - Create a Meta App if/when you add the Meta module, set up webhook subscription
-3. Run the migration: open `migrations/001_init.sql` in the Supabase SQL editor and execute it.
+3. Run the migrations, in order, in the Supabase SQL editor: `migrations/001_init.sql` then
+   `migrations/002_connection_module_scope.sql` (adds the `module` column connections are
+   scoped by - see "Connected accounts are scoped per module" above).
 4. `npm run dev` (or `npm start`)
 
 ## Trying it out locally

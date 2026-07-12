@@ -143,10 +143,23 @@ async function loadConnections() {
   }
 }
 
+// A connection belongs to a module if it was explicitly connected for that
+// module. Legacy rows saved before per-module scoping existed have no
+// `module` value - fall back to matching on provider alone for those so old
+// data doesn't just disappear, but never let a module-scoped connection leak
+// into a different module's list.
+function connectionsForModule(m) {
+  return connectionsCache.filter(c =>
+    c.status === 'active' &&
+    c.provider === m.provider &&
+    (c.module ? c.module === m.name : true)
+  );
+}
+
 function renderModuleList() {
   const el = document.getElementById('moduleList');
   el.innerHTML = modulesCache.map(m => {
-    const conns = connectionsCache.filter(c => c.provider === m.provider && c.status === 'active');
+    const conns = connectionsForModule(m);
     const connected = conns.length > 0;
     return `
       <div class="module-row">
@@ -154,12 +167,28 @@ function renderModuleList() {
           <span class="socket ${connected ? 'on' : ''}"></span>
           <div>
             <div>${m.name}</div>
-            <div class="conn-label">${connected ? conns.map(c => c.account_label).join(', ') : 'not connected'}</div>
+            <div class="conn-label">
+              ${connected ? conns.map(c => `
+                <span class="conn-chip">${c.account_label}
+                  <button type="button" class="conn-chip-x" data-disconnect="${c.id}" title="Disconnect this account">×</button>
+                </span>`).join(' ') : 'not connected'}
+            </div>
           </div>
         </div>
         <button class="btn small ${connected ? 'ghost' : ''}" data-connect-module="${m.name}">${connected ? '+ add another' : 'connect'}</button>
       </div>`;
   }).join('') || '<div class="empty">No modules registered on the server.</div>';
+}
+
+async function disconnectConnection(id) {
+  if (!confirm('Disconnect this account? Any flow steps using it will stop working until you pick another account.')) return;
+  try {
+    const res = await fetch(`${API}/connections/${id}`, { method: 'DELETE', headers: headers() });
+    if (!res.ok) { const data = await res.json().catch(() => ({})); return showMsg(document.getElementById('banner'), data.message || 'Could not disconnect', 'error'); }
+    await loadConnections();
+    renderModuleList();
+    renderActionSelectors();
+  } catch (e) { showMsg(document.getElementById('banner'), 'Network error: ' + e.message, 'error'); }
 }
 
 async function connectModule(moduleName) {
@@ -188,7 +217,7 @@ function updateConnectionOptions() {
   const modName = document.getElementById('actionModule').value;
   const mod = modulesCache.find(m => m.name === modName);
   const connSel = document.getElementById('actionConnection');
-  const relevant = connectionsCache.filter(c => c.provider === (mod ? mod.provider : ''));
+  const relevant = mod ? connectionsForModule(mod) : [];
   connSel.innerHTML = relevant.length
     ? relevant.map(c => `<option value="${c.id}">${c.account_label}</option>`).join('')
     : '<option value="">no connection - connect above first</option>';
@@ -577,7 +606,9 @@ function wireModuleListDelegation() {
   const el = document.getElementById('moduleList');
   el.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-connect-module]');
-    if (btn) connectModule(btn.dataset.connectModule);
+    if (btn) return connectModule(btn.dataset.connectModule);
+    const xBtn = e.target.closest('[data-disconnect]');
+    if (xBtn) return disconnectConnection(xBtn.dataset.disconnect);
   });
 }
 

@@ -136,6 +136,19 @@ module.exports = {
         return { success: true };
       },
     },
+
+    // Resource loader for the "Select Label" dropdown on addLabel - both
+    // Gmail's built-in labels (INBOX, UNREAD, STARRED, ...) and any custom
+    // ones the account has created.
+    listLabels: {
+      inputSchema: z.object({}),
+      outputSchema: z.object({ labels: z.array(z.any()) }),
+      handler: async ({ connection }) => {
+        const gmail = gmailClient(connection);
+        const res = await gmail.users.labels.list({ userId: 'me' });
+        return { labels: res.data.labels || [] };
+      },
+    },
   },
 
   triggers: {

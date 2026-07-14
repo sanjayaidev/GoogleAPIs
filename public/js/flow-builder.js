@@ -759,6 +759,16 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
       case 'gbpPost':
         actionName = 'listPosts';
         break;
+      case 'document':
+        actionName = 'getDocuments';
+        break;
+      case 'gmailLabel':
+        actionName = 'listLabels';
+        break;
+      case 'gmailMessage':
+      case 'gmailThread':
+        actionName = 'loadMails';
+        break;
       default:
         throw new Error(`Unknown resource type: ${resourceType}`);
     }
@@ -800,6 +810,18 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
         options = data.output.posts.map(p => ({
           value: (p.name || '').split('/').pop() || p.name,
           label: (p.summary || p.name || '').slice(0, 50),
+        }));
+      } else if (data.output.documents) {
+        options = data.output.documents.map(d => ({ value: d.id, label: d.name }));
+      } else if (data.output.labels) {
+        options = data.output.labels.map(l => ({ value: l.id, label: l.name }));
+      } else if (data.output.messages) {
+        // Same loadMails output backs two different dropdowns: "pick a
+        // message" (value = message id) and "pick a thread to reply in"
+        // (value = threadId) - resourceType tells us which the field wants.
+        options = data.output.messages.map(m => ({
+          value: resourceType === 'gmailThread' ? m.threadId : m.id,
+          label: `${m.from || ''} - ${m.subject || '(no subject)'}`,
         }));
       }
     }

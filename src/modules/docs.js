@@ -44,6 +44,48 @@ module.exports = {
   ],
 
   actions: {
+    // Lists Google Docs files from Drive (Docs API itself has no "list"
+    // endpoint - documents live in Drive, so this queries Drive filtered to
+    // the Docs mimeType). Mirrors drive.js's listFiles shape.
+    listDocuments: {
+      inputSchema: z.object({
+        query: z.string().optional(), // extra Drive query, ANDed with the mimeType filter, e.g. "name contains 'report'"
+        maxResults: z.number().int().min(1).max(100).optional().default(20),
+      }),
+      outputSchema: z.object({ documents: z.array(z.any()) }),
+      handler: async ({ connection, input }) => {
+        const drive = driveClient(connection);
+        const mimeFilter = "mimeType='application/vnd.google-apps.document'";
+        const q = input.query ? `${mimeFilter} and (${input.query})` : mimeFilter;
+        const res = await drive.files.list({
+          q,
+          pageSize: input.maxResults,
+          fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
+        });
+        return { documents: res.data.files || [] };
+      },
+    },
+
+    // Resource loader for the "Select Document" dropdowns below - same data
+    // as listDocuments, shaped as {value,label} options (mirrors drive.js's
+    // getFiles/getFolders loaders).
+    getDocuments: {
+      inputSchema: z.object({
+        maxResults: z.number().int().min(1).max(100).optional().default(50),
+      }),
+      outputSchema: z.object({ options: z.array(z.object({ value: z.string(), label: z.string() })) }),
+      handler: async ({ connection, input }) => {
+        const drive = driveClient(connection);
+        const res = await drive.files.list({
+          q: "mimeType='application/vnd.google-apps.document'",
+          pageSize: input.maxResults,
+          fields: 'files(id, name)',
+        });
+        const options = (res.data.files || []).map(f => ({ value: f.id, label: f.name }));
+        return { options };
+      },
+    },
+
     createDocument: {
       inputSchema: z.object({
         title: z.string(),

@@ -26,15 +26,19 @@ const NODE_DEFS = {
         { name: 'body', label: 'Body', type: 'textarea' },
       ]},
       { id: 'reply', label: 'Reply to thread', fields: [
-        { name: 'threadId', label: 'Thread ID' }, { name: 'to', label: 'To' },
+        { name: 'threadId', label: 'Select Email (thread)', type: 'resource', resourceType: 'gmailThread' },
+        { name: 'to', label: 'To' },
         { name: 'subject', label: 'Subject' }, { name: 'body', label: 'Body', type: 'textarea' },
       ]},
       { id: 'markAsRead', label: 'Mark as read', fields: [
-        { name: 'messageId', label: 'Message ID' },
+        { name: 'messageId', label: 'Select Email', type: 'resource', resourceType: 'gmailMessage' },
       ]},
       { id: 'addLabel', label: 'Add label', fields: [
-        { name: 'messageId', label: 'Message ID' }, { name: 'labelId', label: 'Label ID' },
+        { name: 'messageId', label: 'Select Email', type: 'resource', resourceType: 'gmailMessage' },
+        { name: 'labelId', label: 'Select Label', type: 'resource', resourceType: 'gmailLabel' },
       ]},
+      // Resource loader actions for dropdowns
+      { id: 'listLabels', label: 'List labels (for dropdown)', fields: [] },
     ],
   },
 
@@ -198,20 +202,28 @@ const NODE_DEFS = {
     label: 'Google Docs', icon: '📄', color: '#4285f4',
     triggers: [
       { id: 'documentChanged', label: 'On document changed', fields: [
-        { name: 'documentId', label: 'Document ID' },
+        { name: 'documentId', label: 'Select Document', type: 'resource', resourceType: 'document' },
       ]},
     ],
     actions: [
+      { id: 'listDocuments', label: 'List documents', fields: [
+        { name: 'query', label: 'Extra Drive query (optional)', placeholder: "name contains 'report'" },
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '20' },
+      ]},
       { id: 'createDocument', label: 'Create document', fields: [
         { name: 'title', label: 'Title' }, { name: 'body', label: 'Body text', type: 'textarea' },
       ]},
-      { id: 'getDocument', label: 'Get document', fields: [{ name: 'documentId', label: 'Document ID' }] },
+      { id: 'getDocument', label: 'Get document', fields: [{ name: 'documentId', label: 'Select Document', type: 'resource', resourceType: 'document' }] },
       { id: 'appendText', label: 'Append text', fields: [
-        { name: 'documentId', label: 'Document ID' }, { name: 'text', label: 'Text', type: 'textarea' },
+        { name: 'documentId', label: 'Select Document', type: 'resource', resourceType: 'document' }, { name: 'text', label: 'Text', type: 'textarea' },
       ]},
       { id: 'replaceAllText', label: 'Find & replace text', fields: [
-        { name: 'documentId', label: 'Document ID' }, { name: 'findText', label: 'Find text' },
+        { name: 'documentId', label: 'Select Document', type: 'resource', resourceType: 'document' }, { name: 'findText', label: 'Find text' },
         { name: 'replaceText', label: 'Replace text' }, { name: 'matchCase', label: 'Match case', type: 'checkbox' },
+      ]},
+      // Resource loader action for dropdowns
+      { id: 'getDocuments', label: 'Get documents (for dropdown)', fields: [
+        { name: 'maxResults', label: 'Max results', type: 'number', placeholder: '50' },
       ]},
     ],
   },

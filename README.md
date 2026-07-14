@@ -112,10 +112,10 @@ The OAuth flow automatically requests exactly the scopes a module declares (plus
 
 | Module | Actions | Scopes |
 |---|---|---|
-| `gmail` | loadMails, sendMail, createDraft, reply, markAsRead, addLabel | gmail.readonly, gmail.send, gmail.modify |
+| `gmail` | loadMails, sendMail, createDraft, reply, markAsRead, addLabel, listLabels | gmail.readonly, gmail.send, gmail.modify |
 | `calendar` | listCalendars, listEvents, createEvent, updateEvent, deleteEvent | calendar.events, calendar.readonly |
 | `sheets` | createSpreadsheet, readRange, appendRow, updateRange, clearRange | spreadsheets |
-| `docs` | createDocument, getDocument, appendText, replaceAllText | documents |
+| `docs` | listDocuments, createDocument, getDocument, appendText, replaceAllText | documents, drive.metadata.readonly |
 | `drive` | listFiles, getFile, uploadFile, createFolder, deleteFile, shareFile | drive (full - narrow to `drive.file` if you don't need to touch a user's existing files) |
 | `forms` | createForm, getForm, addQuestion, listResponses | forms.body, forms.responses.readonly |
 | `googleBusinessProfile` | listAccounts, listLocations, getLocation, getDailyMetrics, listReviews, replyToReview, deleteReviewReply | business.manage |

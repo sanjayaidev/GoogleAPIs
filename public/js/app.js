@@ -230,9 +230,15 @@ const ACTION_FIELDS = {
   loadMails: [{name:'query', label:'Search query', placeholder:'is:unread'}, {name:'maxResults', label:'Max results', placeholder:'10', type:'number'}],
   sendMail: [{name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
   createDraft: [{name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
-  reply: [{name:'threadId', label:'Thread ID'}, {name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true}],
-  markAsRead: [{name:'messageId', label:'Message ID'}],
-  addLabel: [{name:'messageId', label:'Message ID'}, {name:'labelId', label:'Label ID'}],
+  reply: [
+    {name:'threadId', label:'Select Email (thread)', type:'resource', resourceType:'gmailThread'},
+    {name:'to', label:'To'}, {name:'subject', label:'Subject'}, {name:'body', label:'Body', textarea:true},
+  ],
+  markAsRead: [{name:'messageId', label:'Select Email', type:'resource', resourceType:'gmailMessage'}],
+  addLabel: [
+    {name:'messageId', label:'Select Email', type:'resource', resourceType:'gmailMessage'},
+    {name:'labelId', label:'Select Label', type:'resource', resourceType:'gmailLabel'},
+  ],
 
   // --- calendar ---
   listCalendars: [],
@@ -320,17 +326,21 @@ const ACTION_FIELDS = {
   ],
 
   // --- docs ---
+  listDocuments: [
+    {name:'query', label:'Extra Drive query (optional)', placeholder:"name contains 'report'"},
+    {name:'maxResults', label:'Max results', placeholder:'20', type:'number'},
+  ],
   createDocument: [
     {name:'title', label:'Title'},
     {name:'body', label:'Body text', textarea:true},
   ],
-  getDocument: [{name:'documentId', label:'Document ID'}],
+  getDocument: [{name:'documentId', label:'Select Document', type:'resource', resourceType:'document'}],
   appendText: [
-    {name:'documentId', label:'Document ID'},
+    {name:'documentId', label:'Select Document', type:'resource', resourceType:'document'},
     {name:'text', label:'Text', textarea:true},
   ],
   replaceAllText: [
-    {name:'documentId', label:'Document ID'},
+    {name:'documentId', label:'Select Document', type:'resource', resourceType:'document'},
     {name:'findText', label:'Find text'},
     {name:'replaceText', label:'Replace text'},
     {name:'matchCase', label:'Match case', type:'checkbox'},
@@ -502,7 +512,13 @@ function cacheResourceOutput(resourceType, depNames, prefix, options) {
 // Recognizes the shape of common list-action outputs and turns them into
 // {value,label} dropdown options - used to seed the cache from whatever the
 // person just fetched, not just from an explicit "Load options" click.
-function optionsFromActionOutput(output) {
+// `hintResourceType` disambiguates output shapes that can seed more than one
+// dropdown - loadMails' `messages` array backs both a "pick a message"
+// dropdown (value = message id, for markAsRead/addLabel) and a "pick a
+// thread to reply in" dropdown (value = threadId, for reply); the raw
+// output shape is the same, so the caller's declared resourceType decides
+// which id gets used as the option value.
+function optionsFromActionOutput(output, hintResourceType) {
   if (!output) return null;
   if (output.spreadsheets) return { resourceType: 'spreadsheet', options: output.spreadsheets.map(s => ({ value: s.id, label: s.name })) };
   if (output.sheets) return { resourceType: 'sheet', options: output.sheets.map(s => ({ value: s.title, label: s.title })) };
@@ -510,6 +526,12 @@ function optionsFromActionOutput(output) {
   if (output.files) return { resourceType: 'driveFile', options: output.files.map(f => ({ value: f.id, label: f.name })) };
   if (output.folders) return { resourceType: 'driveFolder', options: output.folders.map(f => ({ value: f.id, label: f.name })) };
   if (output.forms) return { resourceType: 'form', options: output.forms.map(f => ({ value: f.id, label: f.name })) };
+  if (output.documents) return { resourceType: 'document', options: output.documents.map(d => ({ value: d.id, label: d.name })) };
+  if (output.options) return { resourceType: hintResourceType, options: output.options };
+  if (output.labels) return { resourceType: 'gmailLabel', options: output.labels.map(l => ({ value: l.id, label: l.name })) };
+  if (output.messages) return hintResourceType === 'gmailThread'
+    ? { resourceType: 'gmailThread', options: output.messages.map(m => ({ value: m.threadId, label: `${m.from || ''} - ${m.subject || '(no subject)'}` })) }
+    : { resourceType: 'gmailMessage', options: output.messages.map(m => ({ value: m.id, label: `${m.from || ''} - ${m.subject || '(no subject)'}` })) };
   if (output.accounts) return { resourceType: 'gbpAccount', options: output.accounts.map(a => ({ value: a.name, label: a.accountName || a.name })) };
   if (output.locations) return { resourceType: 'gbpLocation', options: output.locations.map(l => ({ value: l.name, label: l.title || l.name })) };
   if (output.reviews) return { resourceType: 'gbpReview', options: output.reviews.map(r => ({
@@ -528,6 +550,7 @@ function optionsFromActionOutput(output) {
 const RESOURCE_DEPENDS = {
   spreadsheet: [], sheet: ['spreadsheetId'], calendar: [], driveFile: [], driveFolder: [],
   form: [], gbpAccount: [], gbpLocation: ['accountId'], gbpReview: ['accountId', 'locationId'], gbpPost: ['accountId', 'locationId'],
+  document: [], gmailLabel: [], gmailMessage: [], gmailThread: [],
 };
 
 // Maps a dropdown's resourceType to the backend action that fetches it.
@@ -543,6 +566,10 @@ function resourceFetchPlan(resourceType) {
     case 'gbpLocation': return { action: 'listLocations' };
     case 'gbpReview': return { action: 'listReviews' };
     case 'gbpPost': return { action: 'listPosts' };
+    case 'document': return { action: 'getDocuments' };
+    case 'gmailLabel': return { action: 'listLabels' };
+    case 'gmailMessage': return { action: 'loadMails' };
+    case 'gmailThread': return { action: 'loadMails' };
     default: return null;
   }
 }
@@ -577,7 +604,7 @@ async function loadResourceOptions(prefix, resourceType, dependsOnStr, fieldName
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.error || 'Failed to load options');
 
-    const parsed = optionsFromActionOutput(data.output) || { options: [] };
+    const parsed = optionsFromActionOutput(data.output, resourceType) || { options: [] };
     cacheResourceOutput(resourceType, depNames, prefix, parsed.options);
     fillResourceSelect(selectEl, parsed.options);
     if (parsed.options.length === 0) showMsg(document.getElementById('banner'), 'No results found for that dropdown.', 'error');

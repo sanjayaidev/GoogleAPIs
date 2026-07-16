@@ -4,21 +4,90 @@ const { getConnection } = require('./connections');
 const logger = require('./logger');
 
 /**
+ * Dot-path lookup, e.g. getPath(obj, "messages.0.id").
+ */
+function getPath(obj, path) {
+  if (obj === undefined || obj === null || !path) return obj;
+  return path.split('.').reduce(
+    (acc, key) => (acc === undefined || acc === null ? undefined : acc[key]),
+    obj
+  );
+}
+
+const VAR_TOKEN_RE = /\{\{\s*([^}]+?)\s*\}\}/g;
+const WHOLE_VAR_TOKEN_RE = /^\{\{\s*([^}]+?)\s*\}\}$/;
+
+/**
+ * Resolves a single "<stepIndex>.<field.path>" (or "step<stepIndex>.<...>")
+ * token against the running results map, keyed by step order_index.
+ */
+function resolveToken(token, results) {
+  const trimmed = token.trim();
+  const dot = trimmed.indexOf('.');
+  const stepPart = (dot === -1 ? trimmed : trimmed.slice(0, dot)).replace(/^step/i, '');
+  const path = dot === -1 ? '' : trimmed.slice(dot + 1);
+  const stepResult = results[stepPart] !== undefined ? results[stepPart] : results[Number(stepPart)];
+  if (stepResult === undefined) return undefined;
+  return path ? getPath(stepResult, path) : stepResult;
+}
+
+/**
+ * Placeholder-mapping: a string field can embed one or more `{{stepIndex.field.path}}`
+ * tokens (n8n-style) that get resolved against prior steps' outputs.
+ *   - A string that is *entirely* one token ("{{1.messages}}") resolves to
+ *     the referenced value's native type (object/array/number/etc).
+ *   - A string with a token embedded in other text ("Hi {{0.name}}") is
+ *     treated as a template and the token is stringified in place.
+ * Non-string values pass through untouched (see resolveValue for how
+ * objects/arrays are walked).
+ */
+function interpolateString(str, results) {
+  if (typeof str !== 'string' || str.indexOf('{{') === -1) return str;
+
+  const wholeMatch = str.match(WHOLE_VAR_TOKEN_RE);
+  if (wholeMatch) return resolveToken(wholeMatch[1], results);
+
+  return str.replace(VAR_TOKEN_RE, (_, token) => {
+    const val = resolveToken(token, results);
+    if (val === undefined || val === null) return '';
+    return typeof val === 'object' ? JSON.stringify(val) : String(val);
+  });
+}
+
+/**
+ * Recursively resolves a single input_map value. Supports:
+ *   - the legacy explicit reference object: { fromStep: "<order_index>", field: "messages" }
+ *   - `{{stepIndex.field.path}}` placeholder tokens embedded in strings
+ *   - arrays/nested objects containing either of the above
+ *   - plain static values, returned as-is
+ */
+function resolveValue(val, results) {
+  if (val && typeof val === 'object' && !Array.isArray(val) && 'fromStep' in val) {
+    const prior = results[val.fromStep];
+    return prior === undefined ? undefined : getPath(prior, val.field);
+  }
+  if (typeof val === 'string') return interpolateString(val, results);
+  if (Array.isArray(val)) return val.map((v) => resolveValue(v, results));
+  if (val && typeof val === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) out[k] = resolveValue(v, results);
+    return out;
+  }
+  return val;
+}
+
+/**
  * Resolves a step's input_map into concrete values. Each field in
- * input_map is either a static value, or a reference object:
- *   { fromStep: "<step order_index>", field: "messages" }
+ * input_map is either a static value, a reference object
+ * ({ fromStep: "<step order_index>", field: "messages" }), or a string
+ * containing one or more `{{stepIndex.field.path}}` placeholder tokens
  * pulling from a previous step's output, stored in `results` keyed by
  * order_index.
  */
 function resolveInput(inputMap, results) {
   const resolved = {};
   for (const [key, val] of Object.entries(inputMap || {})) {
-    if (val && typeof val === 'object' && 'fromStep' in val) {
-      const prior = results[val.fromStep];
-      resolved[key] = prior ? prior[val.field] : undefined;
-    } else {
-      resolved[key] = val;
-    }
+    resolved[key] = resolveValue(val, results);
   }
   return resolved;
 }
@@ -27,7 +96,7 @@ function evaluateCondition(condition, results) {
   if (!condition) return { proceed: true };
   const { field, operator, value, fromStep, skipToStepId } = condition;
   const source = results[fromStep] || {};
-  const actual = source[field];
+  const actual = getPath(source, field);
 
   const ops = {
     equals: (a, b) => a === b,
@@ -108,4 +177,4 @@ async function runFlow(flowId, userId) {
   }
 }
 
-module.exports = { runFlow };
+module.exports = { runFlow, resolveInput, resolveValue, interpolateString, getPath };

@@ -30,6 +30,10 @@ const ZOOM_MIN = 0.35, ZOOM_MAX = 1.75;
 const NODE_W = 190;
 const NODE_H = 64; // approximate rendered height, used for socket + edge geometry
 
+// Cached run results and test trigger data for mapping picker dynamic fields
+let lastRunResults = null;
+let testTriggerDataObj = null;
+
 function headers() {
   return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey };
 }
@@ -334,6 +338,11 @@ function renderCanvas() {
   const empty = document.getElementById('canvasEmpty');
   empty.style.display = canvasNodes.length ? 'none' : 'block';
 
+  // Compute ordered chain to get action indices for badges
+  const chain = computeOrderedChain({ silent: true }) || [];
+  const hasTrigger = chain[0] && chain[0].role === 'trigger';
+  const actionChain = hasTrigger ? chain.slice(1) : chain;
+
   canvas.innerHTML = canvasNodes.map((n) => {
     const def = NODE_DEFS[n.module];
     const typeDef = nodeTypeDef(n);
@@ -341,12 +350,29 @@ function renderCanvas() {
     const conn = conns.find(c => c.id === n.connectionId);
     const hasOut = edges.some(e => e.from === n.id);
     const hasIn = edges.some(e => e.to === n.id);
+    
+    // Compute badge: TRIGGER for trigger nodes, number for actions in chain order
+    let badgeText = n.role === 'trigger' ? 'TRIGGER' : '';
+    if (n.role !== 'trigger') {
+      const actionIdx = actionChain.findIndex(an => an.id === n.id);
+      if (actionIdx >= 0) badgeText = String(actionIdx + 1);
+    }
+    
+    // Module color as CSS custom property
+    const accentColor = def.color || 'var(--accent)';
+    const accentBg = def.color ? (def.color + '20') : 'var(--accent-dim)'; // 20 = ~12% alpha hex
+    
     return `
-      <div class="node-box ${n.id === selectedNodeId ? 'selected' : ''}" data-node-id="${n.id}" style="left:${n.x}px; top:${n.y}px;">
-        <div class="nb-role">${n.role}</div>
+      <div class="node-box ${n.id === selectedNodeId ? 'selected' : ''}" data-node-id="${n.id}" style="left:${n.x}px; top:${n.y}px; --node-accent: ${accentColor}; --node-accent-bg: ${accentBg};">
+        <div class="nb-role-badge">${badgeText}</div>
         <button class="nb-remove" type="button" data-remove-node="${n.id}" title="Remove node">✕</button>
-        <div class="nb-head"><span class="nb-icon">${def.icon}</span>${def.label}</div>
-        <div class="nb-sub">${typeDef ? typeDef.label : 'choose an operation'}${conn ? ' · ' + conn.account_label : (n.connectionId === '' && conns.length === 0 && !def.noAuth ? ' · no account' : '')}</div>
+        <div class="nb-head">
+          <span class="nb-icon">${def.icon}</span>
+          <div class="nb-title">
+            <span class="nb-title-main">${def.label}</span>
+            <div class="nb-sub">${typeDef ? typeDef.label : 'choose an operation'}${conn ? ' · ' + conn.account_label : (n.connectionId === '' && conns.length === 0 && !def.noAuth ? ' · no account' : '')}</div>
+          </div>
+        </div>
         ${n.role !== 'trigger' ? `<div class="nb-socket in ${hasIn ? 'filled' : ''}" data-socket="in" data-node-id="${n.id}" title="Drag a connector here"></div>` : ''}
         <div class="nb-socket out ${hasOut ? 'filled' : ''}" data-socket="out" data-node-id="${n.id}" title="Drag to another node's input to connect"></div>
       </div>`;
@@ -362,9 +388,12 @@ function socketPos(node, which) {
   return { x, y };
 }
 
+// Bezier edge path with horizontal control points (n8n-style smooth curve)
 function edgePathD(p1, p2) {
-  const mx = (p1.x + p2.x) / 2;
-  return `M ${p1.x} ${p1.y} C ${mx} ${p1.y}, ${mx} ${p2.y}, ${p2.x} ${p2.y}`;
+  const dx = Math.max(Math.abs(p2.x - p1.x), 50); // minimum horizontal span for control points
+  const cp1x = p1.x + dx * 0.5;
+  const cp2x = p2.x - dx * 0.5;
+  return `M ${p1.x} ${p1.y} C ${cp1x} ${p1.y}, ${cp2x} ${p2.y}, ${p2.x} ${p2.y}`;
 }
 
 function drawEdges() {
@@ -1032,6 +1061,62 @@ function computeOrderedChain(opts) {
 // is exactly what the backend's flowRunner keys `results` by (see
 // src/lib/flowRunner.js), so `{{<that index>.someField}}` in a field always
 // lines up with what actually ran before this node once saved.
+// Get output fields for a node, including dynamic columns from sample data
+function getOutputFieldsForNode(node) {
+  if (!node) return [];
+  const def = NODE_DEFS[node.module];
+  const typeDef = nodeTypeDef(node);
+  if (!typeDef || !typeDef.outputFields) return [];
+  
+  let fields = [...typeDef.outputFields];
+  
+  // Handle dynamicColumns (e.g., sheets values array)
+  if (typeDef.dynamicColumns) {
+    const { path, labelPrefix } = typeDef.dynamicColumns;
+    // Check for cached sample data from run results
+    let sampleValue = null;
+    if (lastRunResults) {
+      // Try to find this node's result in lastRunResults
+      const stepKey = node.role === 'trigger' ? 'trigger' : String(computeOrderedChain({silent:true})?.findIndex(n => n.id === node.id));
+      if (stepKey && lastRunResults[stepKey]) {
+        sampleValue = getPathValue(lastRunResults[stepKey], path);
+      }
+    }
+    // Also check test trigger data cache
+    if (!sampleValue && testTriggerDataObj && node.role === 'trigger') {
+      sampleValue = getPathValue(testTriggerDataObj, path);
+    }
+    
+    // Generate column fields based on sample or default range
+    const maxCols = sampleValue && Array.isArray(sampleValue) ? sampleValue.length : 10;
+    for (let i = 0; i < Math.min(maxCols, 26); i++) {
+      fields.push({
+        label: `${labelPrefix} ${indexToColumnLetter(i)}`,
+        path: `${path}.${i}`
+      });
+    }
+  }
+  
+  return fields;
+}
+
+// Convert array index to spreadsheet-style column letter (0->A, 1->B, 25->Z, 26->AA, etc.)
+function indexToColumnLetter(index) {
+  let result = '';
+  while (index >= 0) {
+    result = String.fromCharCode(65 + (index % 26)) + result;
+    index = Math.floor(index / 26) - 1;
+  }
+  return result;
+}
+
+// Safely get a nested value from an object using dot path
+function getPathValue(obj, path) {
+  if (!obj || !path) return undefined;
+  return path.split('.').reduce((curr, key) => curr && curr[key], obj);
+}
+
+// Enhanced getUpstreamStepsFor that includes output field info
 function getUpstreamStepsFor(node) {
   const chain = computeOrderedChain({ silent: true });
   if (!chain || !node) return [];
@@ -1041,64 +1126,82 @@ function getUpstreamStepsFor(node) {
   if (idx === -1) return []; // node not placed in the chain yet
 
   const steps = [];
-  // The trigger's own output (e.g. sheets rowChange's `values`, gmail
-  // newMail's `messages`) is available to every action step via
-  // `{{trigger.field}}` - it isn't a numbered step, it's seeded into
-  // results.trigger before the first step runs (see flowRunner.js).
+  // The trigger's own output
   if (hasTrigger) {
     const triggerDef = nodeTypeDef(chain[0]);
     const def = NODE_DEFS[chain[0].module];
+    const outputFields = getOutputFieldsForNode(chain[0]);
     steps.push({
       orderIndex: 'trigger',
       label: `Trigger — ${def ? def.label : chain[0].module}: ${triggerDef ? triggerDef.label : (chain[0].typeId || 'untitled')}`,
+      outputFields: outputFields,
     });
   }
   actionChain.slice(0, idx).forEach((n, i) => {
     const def = NODE_DEFS[n.module];
     const typeDef = nodeTypeDef(n);
+    const outputFields = getOutputFieldsForNode(n);
     steps.push({
       orderIndex: i,
       label: `${def ? def.label : n.module} — ${typeDef ? typeDef.label : (n.typeId || 'untitled')}`,
+      outputFields: outputFields,
     });
   });
   return steps;
 }
 
+// Mapping picker HTML with output fields listing
 function varPickerHtml(fieldName, upstreamSteps) {
   if (!upstreamSteps.length) return '';
+  
+  let menuItems = '';
+  upstreamSteps.forEach(step => {
+    menuItems += `<div class="var-menu-head">${step.label}</div>`;
+    if (step.outputFields && step.outputFields.length > 0) {
+      step.outputFields.forEach(field => {
+        const token = typeof step.orderIndex === 'number' 
+          ? `{{${step.orderIndex + 1}.${field.path}}}`
+          : `{{trigger.${field.path}}}`;
+        menuItems += `
+          <div class="var-menu-item" data-var-token="${token}" data-var-label="${field.label}">
+            <span class="var-menu-label">${field.label}</span>
+            <span class="var-menu-sub">${typeof step.orderIndex === 'number' ? `Step ${step.orderIndex + 1}` : 'Trigger'} · ${field.path}</span>
+          </div>`;
+      });
+    } else {
+      menuItems += `<div class="var-menu-item" style="color:var(--text-muted); font-style:italic;">No fields available</div>`;
+    }
+  });
+  
   return `
     <div class="var-picker" data-var-for="${fieldName}">
-      <button type="button" class="var-btn" title="Insert a value from an earlier step">🔗</button>
+      <button type="button" class="var-btn" title="Map a value from an earlier step">🔗</button>
       <div class="var-menu">
-        <div class="var-menu-head">Insert from earlier step</div>
-        ${upstreamSteps.map(s => `
-          <div class="var-menu-item" data-var-token="{{${s.orderIndex}.field}}">
-            <span>${s.label}</span><span class="var-menu-sub">step ${s.orderIndex}</span>
-          </div>`).join('')}
+        <div class="var-menu-search"><input type="text" placeholder="Search fields..." /></div>
+        ${menuItems}
       </div>
     </div>`;
 }
 
-// Inserts `token` at the current caret position of a text/textarea field,
-// leaves the literal word "field" inside the freshly-inserted token
-// selected so the user can immediately type the real field/path name over
-// it (e.g. "id", "messages.0.from"), and fires a normal `input` event so
-// the existing props-panel listener persists it onto node.config exactly
-// like manual typing would.
-function insertVariableToken(el, token) {
+// Inserts token into field - handles both chip rendering and raw text insertion
+function insertVariableToken(el, token, label) {
   el.focus();
-  const start = el.selectionStart ?? el.value.length;
-  const end = el.selectionEnd ?? el.value.length;
-  el.value = el.value.slice(0, start) + token + el.value.slice(end);
-
-  const markerOffset = token.indexOf('field');
-  if (markerOffset !== -1) {
-    el.setSelectionRange(start + markerOffset, start + markerOffset + 'field'.length);
+  // If field is empty or user had nothing selected, replace entire value with token
+  const start = el.selectionStart ?? 0;
+  const end = el.selectionEnd ?? 0;
+  const isEmpty = el.value.trim() === '';
+  
+  if (isEmpty) {
+    // Store token and label for chip rendering
+    el.value = token;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   } else {
-    const caret = start + token.length;
-    el.setSelectionRange(caret, caret);
+    // Insert at caret position for mixed text
+    el.value = el.value.slice(0, start) + token + el.value.slice(end);
+    el.setSelectionRange(start + token.length, start + token.length);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
   }
-  el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 async function saveFlow() {
@@ -1164,9 +1267,13 @@ async function runFlow() {
   if (raw) {
     try {
       triggerPayload = JSON.parse(raw);
+      // Cache parsed test trigger data for mapping picker dynamic fields
+      testTriggerDataObj = triggerPayload;
     } catch {
       return showToast('Test trigger data isn\'t valid JSON.', 'error');
     }
+  } else {
+    testTriggerDataObj = null;
   }
 
   document.getElementById('canvasStatus').textContent = 'Running…';
@@ -1178,6 +1285,10 @@ async function runFlow() {
     const data = await res.json();
     document.getElementById('canvasStatus').textContent = `Run ${data.status}` + (data.error ? ': ' + data.error : '');
     showToast(`Run ${data.status}` + (data.error ? ': ' + data.error : ''), data.status === 'success' ? 'ok' : 'error');
+    // Cache run results for mapping picker dynamic fields
+    lastRunResults = data.results || null;
+    // Re-render props panel to refresh mapping picker with new field options
+    if (selectedNodeId) renderProps();
   } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 }
 

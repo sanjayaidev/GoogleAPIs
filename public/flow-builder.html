@@ -227,6 +227,7 @@
       <input type="text" id="flowNameInput" placeholder="Untitled flow" />
       <button class="tbtn primary" id="saveFlowBtn">Save flow</button>
       <button class="tbtn" id="runFlowBtn">Run now</button>
+      <button type="button" class="tbtn" id="testTriggerDataBtn" title="Provide sample trigger data (e.g. a sheet row) to test {{trigger.field}} mappings without waiting for a real event">Test trigger data</button>
       <div class="zoom-group">
         <button type="button" id="zoomOutBtn" title="Zoom out (-)">−</button>
         <span class="zoom-pct" id="zoomPct">100%</span>
@@ -237,6 +238,12 @@
       <div class="spacer"></div>
       <span class="canvas-status" id="canvasStatus"></span>
       <select id="flowSelect"><option value="">My saved flows…</option></select>
+    </div>
+    <div class="test-trigger-panel" id="testTriggerPanel" style="display:none; padding:10px 16px; border-bottom:1px solid var(--line); background:#fafafa;">
+      <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px;">
+        Sample trigger data (JSON) — used by "Run now" so <code>{{trigger.field}}</code> mappings can be tested without a live webhook
+      </label>
+      <textarea id="testTriggerData" rows="4" style="width:100%; font-family:monospace; font-size:12px; box-sizing:border-box;" placeholder='e.g. for a Sheets "row added" trigger: {"eventType": "added", "sheetName": "Sheet1", "rowNumber": 5, "values": ["Alice", "alice@example.com"]}'></textarea>
     </div>
     <div class="canvas-scroll" id="canvasScroll">
       <div class="canvas-inner" id="canvasInner">

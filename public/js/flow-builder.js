@@ -631,7 +631,7 @@ function renderProps() {
   }).join('') || '<div class="props-empty">No inputs needed for this operation.</div>';
 
   const mappingHint = upstreamSteps.length
-    ? `<div class="hint" style="margin:-6px 0 14px;">🔗 Click the link icon next to a field to map in a value from an earlier step. It inserts <code>{{stepIndex.field}}</code> with "field" pre-selected — type the actual field name (or path, e.g. <code>messages.0.from</code>) from that step's output over it. You can also mix it into surrounding text, e.g. <code>Hello {{0.name}}</code>.</div>`
+    ? `<div class="hint" style="margin:-6px 0 14px;">🔗 Click the link icon next to a field to map in a value from the trigger or an earlier step. It inserts <code>{{trigger.field}}</code> or <code>{{stepIndex.field}}</code> with "field" pre-selected — type the actual field name (or path, e.g. <code>values.0.1</code> for a sheet row, or <code>messages.0.subject</code> for an email) from that step's output over it. You can also mix it into surrounding text, e.g. <code>Hello {{trigger.values.0.0}}</code>.</div>`
     : '';
 
   panel.innerHTML = `
@@ -1038,15 +1038,30 @@ function getUpstreamStepsFor(node) {
   const hasTrigger = chain[0] && chain[0].role === 'trigger';
   const actionChain = hasTrigger ? chain.slice(1) : chain;
   const idx = actionChain.findIndex(n => n.id === node.id);
-  if (idx <= 0) return []; // first action step (or node not placed in the chain yet) has nothing upstream
-  return actionChain.slice(0, idx).map((n, i) => {
+  if (idx === -1) return []; // node not placed in the chain yet
+
+  const steps = [];
+  // The trigger's own output (e.g. sheets rowChange's `values`, gmail
+  // newMail's `messages`) is available to every action step via
+  // `{{trigger.field}}` - it isn't a numbered step, it's seeded into
+  // results.trigger before the first step runs (see flowRunner.js).
+  if (hasTrigger) {
+    const triggerDef = nodeTypeDef(chain[0]);
+    const def = NODE_DEFS[chain[0].module];
+    steps.push({
+      orderIndex: 'trigger',
+      label: `Trigger — ${def ? def.label : chain[0].module}: ${triggerDef ? triggerDef.label : (chain[0].typeId || 'untitled')}`,
+    });
+  }
+  actionChain.slice(0, idx).forEach((n, i) => {
     const def = NODE_DEFS[n.module];
     const typeDef = nodeTypeDef(n);
-    return {
+    steps.push({
       orderIndex: i,
       label: `${def ? def.label : n.module} — ${typeDef ? typeDef.label : (n.typeId || 'untitled')}`,
-    };
+    });
   });
+  return steps;
 }
 
 function varPickerHtml(fieldName, upstreamSteps) {
@@ -1143,9 +1158,23 @@ async function saveFlow() {
 async function runFlow() {
   const id = lastSavedFlowId || document.getElementById('flowSelect').value;
   if (!id) return showToast('Save the flow first (or pick a saved one from the dropdown).', 'error');
+
+  let triggerPayload;
+  const raw = (document.getElementById('testTriggerData').value || '').trim();
+  if (raw) {
+    try {
+      triggerPayload = JSON.parse(raw);
+    } catch {
+      return showToast('Test trigger data isn\'t valid JSON.', 'error');
+    }
+  }
+
   document.getElementById('canvasStatus').textContent = 'Running…';
   try {
-    const res = await fetch(`${API}/flows/${id}/run`, { method: 'POST', headers: headers() });
+    const res = await fetch(`${API}/flows/${id}/run`, {
+      method: 'POST', headers: headers(),
+      body: JSON.stringify({ triggerPayload }),
+    });
     const data = await res.json();
     document.getElementById('canvasStatus').textContent = `Run ${data.status}` + (data.error ? ': ' + data.error : '');
     showToast(`Run ${data.status}` + (data.error ? ': ' + data.error : ''), data.status === 'success' ? 'ok' : 'error');
@@ -1155,6 +1184,10 @@ async function runFlow() {
 // ---------- init ----------
 
 function wireStaticButtons() {
+  document.getElementById('testTriggerDataBtn').addEventListener('click', () => {
+    const panel = document.getElementById('testTriggerPanel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
   document.getElementById('toggleSideBtn').addEventListener('click', () => {
     document.getElementById('nodeSide').classList.toggle('collapsed');
   });

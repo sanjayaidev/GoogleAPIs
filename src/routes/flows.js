@@ -58,7 +58,10 @@ router.post('/', express.json(), async (req, res, next) => {
   }
 });
 
-// POST /flows/:id/run - executes the flow's steps in order right now (manual trigger)
+// POST /flows/:id/run - executes the flow's steps in order right now (manual trigger).
+// Body (optional): { triggerPayload: {...} } - sample trigger event data so
+// {{trigger.field}} mappings in the first step can be tested without
+// waiting for a real webhook/poll to fire.
 router.post('/:id/run', actionRateLimiter, async (req, res, next) => {
   try {
     const { data: flow, error } = await supabase
@@ -70,7 +73,8 @@ router.post('/:id/run', actionRateLimiter, async (req, res, next) => {
     if (error) throw error;
     if (!flow) return res.status(404).json({ error: 'flow_not_found' });
 
-    const result = await runFlow(flow.id, req.user.id);
+    const { triggerPayload } = req.body || {};
+    const result = await runFlow(flow.id, req.user.id, triggerPayload);
     res.json(result);
   } catch (err) {
     logger.error({ err }, '[flows] run failed');

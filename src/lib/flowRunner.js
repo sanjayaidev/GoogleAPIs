@@ -116,8 +116,14 @@ function evaluateCondition(condition, results) {
  * retries, no branching graph - just a for-loop over the steps, each one
  * a single call into a module's action handler. Logs the run to
  * sm_flow_runs for visibility.
+ *
+ * `triggerPayload`, when provided (a real webhook/poll event, or sample
+ * JSON typed into "Test trigger data" for a manual run), is seeded into
+ * `results.trigger` so the first (and any later) step can pull from it
+ * with `{{trigger.field}}` - e.g. a sheets rowChange trigger's `values`,
+ * or a gmail newMail trigger's `messages`.
  */
-async function runFlow(flowId, userId) {
+async function runFlow(flowId, userId, triggerPayload) {
   const { data: steps, error: stepsError } = await supabase
     .from(TABLES.FLOW_STEPS)
     .select('*')
@@ -133,7 +139,7 @@ async function runFlow(flowId, userId) {
     .single();
   if (runInsertError) throw runInsertError;
 
-  const results = {};
+  const results = { trigger: triggerPayload || {} };
   let skipUntilStepId = null;
 
   try {

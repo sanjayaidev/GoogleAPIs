@@ -154,7 +154,10 @@ async function runFlow(flowId, userId) {
 
       const input = resolveInput(step.input_map, results);
       const parsed = action.inputSchema.parse(input);
-      const connection = await getConnection(step.connection_id, userId);
+      // noAuth modules (e.g. httpRequest) have nothing to look up in
+      // sm_connections - step.connection_id is expected to be null/absent
+      // for them, and the handler gets connection: null.
+      const connection = mod.noAuth ? null : await getConnection(step.connection_id, userId);
 
       const output = await action.handler({ connection, input: parsed });
       results[step.order_index] = output;

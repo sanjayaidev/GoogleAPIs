@@ -8,6 +8,7 @@ const docs = require('./docs');
 const drive = require('./drive');
 const forms = require('./forms');
 const googleBusinessProfile = require('./googleBusinessProfile');
+const httpRequest = require('./httpRequest');
 
 const modules = {
   gmail,
@@ -17,6 +18,7 @@ const modules = {
   drive,
   forms,
   googleBusinessProfile,
+  httpRequest,
   // meta: require('./meta'),
 };
 

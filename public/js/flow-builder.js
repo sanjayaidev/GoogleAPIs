@@ -346,7 +346,7 @@ function renderCanvas() {
         <div class="nb-role">${n.role}</div>
         <button class="nb-remove" type="button" data-remove-node="${n.id}" title="Remove node">✕</button>
         <div class="nb-head"><span class="nb-icon">${def.icon}</span>${def.label}</div>
-        <div class="nb-sub">${typeDef ? typeDef.label : 'choose an operation'}${conn ? ' · ' + conn.account_label : (n.connectionId === '' && conns.length === 0 ? ' · no account' : '')}</div>
+        <div class="nb-sub">${typeDef ? typeDef.label : 'choose an operation'}${conn ? ' · ' + conn.account_label : (n.connectionId === '' && conns.length === 0 && !def.noAuth ? ' · no account' : '')}</div>
         ${n.role !== 'trigger' ? `<div class="nb-socket in ${hasIn ? 'filled' : ''}" data-socket="in" data-node-id="${n.id}" title="Drag a connector here"></div>` : ''}
         <div class="nb-socket out ${hasOut ? 'filled' : ''}" data-socket="out" data-node-id="${n.id}" title="Drag to another node's input to connect"></div>
       </div>`;
@@ -558,8 +558,9 @@ function renderProps() {
   }
   const typeDef = nodeTypeDef(node);
   const conns = connectionsForModule(node.module);
+  const isNoAuth = !!NODE_DEFS[node.module].noAuth;
 
-  const connRow = `
+  const connRow = isNoAuth ? '' : `
     <div class="conn-select-row">
       <label style="display:block; font-size:12px; font-weight:600; margin-bottom:6px;">Account for this node</label>
       <select id="propConnSelect">
@@ -1093,7 +1094,7 @@ async function saveFlow() {
   if (!chain) return;
 
   for (const n of chain) {
-    if (!n.connectionId) return showToast(`Pick an account for the ${NODE_DEFS[n.module].label} node.`, 'error');
+    if (!n.connectionId && !NODE_DEFS[n.module].noAuth) return showToast(`Pick an account for the ${NODE_DEFS[n.module].label} node.`, 'error');
     if (!n.typeId) return showToast(`Pick a trigger/action for the ${NODE_DEFS[n.module].label} node.`, 'error');
   }
 
@@ -1108,7 +1109,7 @@ async function saveFlow() {
     triggerConfig = {
       module: triggerNode.module,
       trigger: triggerNode.typeId,
-      connectionId: triggerNode.connectionId,
+      connectionId: triggerNode.connectionId || null,
       config: buildInputMapForNode(triggerNode, triggerDef),
     };
     actionNodes = chain.slice(1);
@@ -1121,7 +1122,7 @@ async function saveFlow() {
   const steps = actionNodes.map(n => ({
     module: n.module,
     action: n.typeId,
-    connectionId: n.connectionId,
+    connectionId: n.connectionId || null, // '' -> null: the DB column is uuid, '' isn't a valid uuid
     inputMap: buildInputMapForNode(n, nodeTypeDef(n)),
   }));
 

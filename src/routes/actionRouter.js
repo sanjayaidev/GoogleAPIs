@@ -35,7 +35,7 @@ router.post('/:module/:action', async (req, res, next) => {
       });
     }
 
-    if (!connectionId) {
+    if (!connectionId && !mod.noAuth) {
       return res.status(400).json({ error: 'missing_connection_id', message: 'Provide connectionId of a connected account' });
     }
 
@@ -46,24 +46,27 @@ router.post('/:module/:action', async (req, res, next) => {
       return res.status(400).json({ error: 'invalid_input', details: parsed.error.flatten() });
     }
 
-    const connection = await getConnection(connectionId, req.user.id);
+    let connection = null;
+    if (!mod.noAuth) {
+      connection = await getConnection(connectionId, req.user.id);
 
-    if (connection.provider !== mod.provider) {
-      return res.status(400).json({
-        error: 'provider_mismatch',
-        message: `Module "${moduleName}" requires a "${mod.provider}" connection, but connectionId points to a "${connection.provider}" one`,
-      });
-    }
+      if (connection.provider !== mod.provider) {
+        return res.status(400).json({
+          error: 'provider_mismatch',
+          message: `Module "${moduleName}" requires a "${mod.provider}" connection, but connectionId points to a "${connection.provider}" one`,
+        });
+      }
 
-    // Connections are scoped to the module they were OAuth-connected for
-    // (see migration 002 + src/routes/oauth.js). A connection with no
-    // `module` value is a legacy row from before this scoping existed -
-    // allow it through on provider match alone so old data keeps working.
-    if (connection.module && connection.module !== moduleName) {
-      return res.status(400).json({
-        error: 'module_mismatch',
-        message: `This account was connected for "${connection.module}", not "${moduleName}". Connect a separate account for ${moduleName} from the module bar.`,
-      });
+      // Connections are scoped to the module they were OAuth-connected for
+      // (see migration 002 + src/routes/oauth.js). A connection with no
+      // `module` value is a legacy row from before this scoping existed -
+      // allow it through on provider match alone so old data keeps working.
+      if (connection.module && connection.module !== moduleName) {
+        return res.status(400).json({
+          error: 'module_mismatch',
+          message: `This account was connected for "${connection.module}", not "${moduleName}". Connect a separate account for ${moduleName} from the module bar.`,
+        });
+      }
     }
 
     const output = await action.handler({ connection, input: parsed.data });

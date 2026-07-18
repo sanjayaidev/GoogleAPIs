@@ -290,8 +290,21 @@ const NODE_DEFS = {
       ]},
     ],
   },
+  httpRequest: {
+    label: 'HTTP Request', icon: '🌐', color: '#6b7280',
+    noAuth: true, // no OAuth connection - works purely off the fields below
+    triggers: [],
+    actions: [
+      { id: 'request', label: 'Make a request', fields: [
+        { name: 'method', label: 'Method', type: 'select', options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+        { name: 'url', label: 'URL', placeholder: 'https://api.example.com/endpoint' },
+        { name: 'headers', label: 'Headers (JSON object)', type: 'textarea', placeholder: '{"Authorization": "Bearer ..."}', parse: 'json' },
+        { name: 'body', label: 'Body (JSON, or map a value in)', type: 'textarea', placeholder: '{"key": "value"}', parse: 'json' },
+      ]},
+    ],
+  },
 };
 
 // module registry key -> display metadata above (drive/calendar/docs share
 // icon color visually but are distinct backend modules).
-const MODULE_ORDER = ['gmail', 'sheets', 'forms', 'drive', 'calendar', 'docs', 'googleBusinessProfile'];
+const MODULE_ORDER = ['gmail', 'sheets', 'forms', 'drive', 'calendar', 'docs', 'googleBusinessProfile', 'httpRequest'];

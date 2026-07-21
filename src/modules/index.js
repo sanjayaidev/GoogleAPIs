@@ -7,7 +7,6 @@ const sheets = require('./sheets');
 const docs = require('./docs');
 const drive = require('./drive');
 const forms = require('./forms');
-const googleBusinessProfile = require('./googleBusinessProfile');
 const httpRequest = require('./httpRequest');
 
 const modules = {
@@ -17,7 +16,6 @@ const modules = {
   docs,
   drive,
   forms,
-  googleBusinessProfile,
   httpRequest,
   // meta: require('./meta'),
 };

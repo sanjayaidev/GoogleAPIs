@@ -389,58 +389,6 @@ const ACTION_FIELDS = {
   ],
   listResponses: [{name:'formId', label:'Select Form', type:'resource', resourceType:'form'}],
 
-  // --- googleBusinessProfile ---
-  listAccounts: [],
-  listLocations: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'maxResults', label:'Max results', placeholder:'20', type:'number'},
-  ],
-  getLocation: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-  ],
-  getDailyMetrics: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-    {name:'metric', label:'Metric', type:'select', options:[
-      'BUSINESS_IMPRESSIONS_DESKTOP_MAPS','BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
-      'BUSINESS_IMPRESSIONS_MOBILE_MAPS','BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
-      'CALL_CLICKS','WEBSITE_CLICKS','BUSINESS_DIRECTION_REQUESTS',
-    ]},
-    {name:'startDate', label:'Start date', placeholder:'2026-07-01'},
-    {name:'endDate', label:'End date', placeholder:'2026-07-12'},
-  ],
-  listReviews: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-  ],
-  replyToReview: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-    {name:'reviewId', label:'Select Review', type:'resource', resourceType:'gbpReview', dependsOn:'accountId,locationId'},
-    {name:'comment', label:'Reply comment', textarea:true},
-  ],
-  deleteReviewReply: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-    {name:'reviewId', label:'Select Review', type:'resource', resourceType:'gbpReview', dependsOn:'accountId,locationId'},
-  ],
-  listPosts: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-  ],
-  createPost: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-    {name:'summary', label:'Post text', textarea:true},
-    {name:'topicType', label:'Post type', type:'select', options:['STANDARD','EVENT','OFFER','ALERT']},
-    {name:'actionUrl', label:'Learn more URL (optional)'},
-  ],
-  deletePost: [
-    {name:'accountId', label:'Select Account', type:'resource', resourceType:'gbpAccount'},
-    {name:'locationId', label:'Select Location', type:'resource', resourceType:'gbpLocation', dependsOn:'accountId'},
-    {name:'postId', label:'Select Post', type:'resource', resourceType:'gbpPost', dependsOn:'accountId,locationId'},
-  ],
 };
 
 // Reads a dotted path off nested fields (e.g. 'start.dateTime') and writes
@@ -532,25 +480,15 @@ function optionsFromActionOutput(output, hintResourceType) {
   if (output.messages) return hintResourceType === 'gmailThread'
     ? { resourceType: 'gmailThread', options: output.messages.map(m => ({ value: m.threadId, label: `${m.from || ''} - ${m.subject || '(no subject)'}` })) }
     : { resourceType: 'gmailMessage', options: output.messages.map(m => ({ value: m.id, label: `${m.from || ''} - ${m.subject || '(no subject)'}` })) };
-  if (output.accounts) return { resourceType: 'gbpAccount', options: output.accounts.map(a => ({ value: a.name, label: a.accountName || a.name })) };
-  if (output.locations) return { resourceType: 'gbpLocation', options: output.locations.map(l => ({ value: l.name, label: l.title || l.name })) };
-  if (output.reviews) return { resourceType: 'gbpReview', options: output.reviews.map(r => ({
-    value: r.reviewId || r.name, label: `${r.reviewer?.displayName || 'Anonymous'} - ${(r.comment || '').slice(0, 40)}`,
-  })) };
-  if (output.posts) return { resourceType: 'gbpPost', options: output.posts.map(p => ({
-    value: (p.name || '').split('/').pop() || p.name, label: (p.summary || p.name || '').slice(0, 50),
-  })) };
   return null;
 }
 
 // The standard parent-field chain each resource type is fetched within -
 // used to key the cache consistently regardless of which action produced
-// the data (e.g. listLocations' output is keyed by the accountId it used,
-// so a later field needing gbpLocation for that same account finds it).
+// the data.
 const RESOURCE_DEPENDS = {
   spreadsheet: [], sheet: ['spreadsheetId'], calendar: [], driveFile: [], driveFolder: [],
-  form: [], gbpAccount: [], gbpLocation: ['accountId'], gbpReview: ['accountId', 'locationId'], gbpPost: ['accountId', 'locationId'],
-  document: [], gmailLabel: [], gmailMessage: [], gmailThread: [],
+  form: [], document: [], gmailLabel: [], gmailMessage: [], gmailThread: [],
 };
 
 // Maps a dropdown's resourceType to the backend action that fetches it.
@@ -562,10 +500,6 @@ function resourceFetchPlan(resourceType) {
     case 'driveFile': return { action: 'getFiles' };
     case 'driveFolder': return { action: 'getFolders' };
     case 'form': return { action: 'listForms' };
-    case 'gbpAccount': return { action: 'listAccounts' };
-    case 'gbpLocation': return { action: 'listLocations' };
-    case 'gbpReview': return { action: 'listReviews' };
-    case 'gbpPost': return { action: 'listPosts' };
     case 'document': return { action: 'getDocuments' };
     case 'gmailLabel': return { action: 'listLabels' };
     case 'gmailMessage': return { action: 'loadMails' };

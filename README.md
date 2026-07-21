@@ -27,7 +27,7 @@ Your own API key authenticates every call; OAuth connections are stored in Supab
 - One fully-working module: **Gmail** (loadMails, sendMail, createDraft, reply, markAsRead,
   addLabel, + a newMail poll trigger)
 - Six more modules, same shape, same OAuth flow: **Calendar**, **Sheets**, **Docs**, **Drive**,
-  **Forms**, and **Google Business Profile** - see below for scopes and access notes.
+  and **Forms** - see below for scopes and access notes.
 
 ## Using the dashboard
 
@@ -44,7 +44,7 @@ Your own API key authenticates every call; OAuth connections are stored in Supab
 ### Connected accounts are scoped per module
 
 Each "Connect" click stores which module the OAuth grant was for (`sm_connections.module`).
-Connecting Gmail does **not** make Sheets/Docs/Drive/Calendar/Forms/Business Profile show as
+Connecting Gmail does **not** make Sheets/Docs/Drive/Calendar/Forms show as
 connected too - each module lists only the accounts explicitly connected for it, and you can
 connect multiple accounts per module and pick which one a given action/flow-node uses. Click the
 **×** on an account chip (module bar, classic dashboard, or a flow node's properties panel) to
@@ -118,19 +118,8 @@ The OAuth flow automatically requests exactly the scopes a module declares (plus
 | `docs` | listDocuments, createDocument, getDocument, appendText, replaceAllText | documents, drive.metadata.readonly |
 | `drive` | listFiles, getFile, uploadFile, createFolder, deleteFile, shareFile | drive (full - narrow to `drive.file` if you don't need to touch a user's existing files) |
 | `forms` | createForm, getForm, addQuestion, listResponses | forms.body, forms.responses.readonly |
-| `googleBusinessProfile` | listAccounts, listLocations, getLocation, getDailyMetrics, listReviews, replyToReview, deleteReviewReply | business.manage |
 
-**Google Business Profile access is gated separately from OAuth.** Unlike the other modules,
-these APIs are *not* open by default on a new Google Cloud project - you must submit an access
-request (Business Profile APIs → request access), show a legitimate use case, and have a
-Business Profile that's been verified and active for 60+ days with a matching business website.
-Approval typically takes days to weeks. Until then, calls will fail with a permission error even
-with valid tokens and the right scope. Reviews specifically live on the legacy
-`mybusiness.googleapis.com/v4` REST surface (not bundled in the `googleapis` npm package, so
-`googleBusinessProfile.js` calls it directly via the OAuth2 client) - Google has kept this one
-API version active for reviews/posts even though everything else moved to the split APIs.
-
-Also worth knowing: `forms.responses.readonly` and `forms.body` are Google *restricted* scopes,
+**Forms access note:** `forms.responses.readonly` and `forms.body` are Google *restricted* scopes,
 which means a production OAuth app (past 100 test users) needs to go through Google's sensitive-
 scope verification before general users can connect. `drive` (full) is similarly restricted.
 

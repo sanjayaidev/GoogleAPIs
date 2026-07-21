@@ -822,18 +822,6 @@ async function loadResources(selectEl, resourceType, dependsOnField, currentFiel
       case 'form':
         actionName = 'listForms';
         break;
-      case 'gbpAccount':
-        actionName = 'listAccounts';
-        break;
-      case 'gbpLocation':
-        actionName = 'listLocations';
-        break;
-      case 'gbpReview':
-        actionName = 'listReviews';
-        break;
-      case 'gbpPost':
-        actionName = 'listPosts';
-        break;
       case 'document':
         actionName = 'getDocuments';
         break;
